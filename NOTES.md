@@ -1136,11 +1136,11 @@ Same cmdline (UUIDs) as r15. Tests: 204 passed. Not flashed.
 ## 2026-11-17 — GPU: Adreno 650 (freedreno / turnip) renders, kexec tested, not flashed
 
 Kernel change: DTS only (`DRM_MSM` is built in, adreno included). linux branch `gts7xl-gpu`
-3b5f83db3 (on top of gts7xl 706c794ea; applies cleanly on 4339a19be too):
+90b41160d (rebased on gts7xl 36208b21a, the r18 charger work):
 `&gmu` and `&gpu` okay, `&gpu_zap_shader` firmware-name
 `qcom/sm8250/samsung/gts7xl/a650_zap.mbn`. `gpu_mem` already sits at the stock pil_gpu
 region (0x9031a000, 8 KiB, live.dts `pil_gpu_region`). pmaports branch `gts7xl-gpu`
-0333ef59f: kernel patch 0027 (pkgrel 16 there; renumber/rebase onto the battery work),
+5f9ea52ec (on gts7xl e4e87e8a0, r18): kernel patch 0030 and pkgrel 19,
 `device-samsung-gts7xl-nonfree-firmware` (linux-firmware-qcom + firmware-samsung-gts7xl-gpu),
 `firmware-samsung-gts7xl-gpu` (local build only, the .mbn is gitignored).
 
@@ -1173,15 +1173,19 @@ libdrm-tests (+ deps). Results (build/gpu/test-19*/):
   `vkcube --wsi display` selects it.
 - `glmark2-es2-drm` on screen (2800x1752, kmscon stopped): score 790 (build 1187 fps,
   terrain 68, refract 123); off screen score 466.
-- kmscube on screen runs (DRM master needs `systemctl stop kmsconvt@tty1`: kmscon holds it).
-  `-c 900` did not finish in 60 s: page-flip rate on the command-mode panel to be measured
-  (see open issues).
+- kmscube on screen runs (DRM master needs `systemctl stop kmsconvt@tty1`: kmscon holds it);
+  `-c 1/61/241` exit 0. `modetest -M msm -v -s 36:2800x1752` (connector 36 = DSI-1): page
+  flips at 119.6-120.3 Hz, so the command-mode panel flips at its full rate.
 
-Open issues: page-flip rate on the DSI command-mode panel (TE) before Hyprland; GPU
+The flip-rate run (19:46) did not get back to r15 on its own: the owner put the tablet in
+Download Mode for the r18 BOOT flash while it was rebooting (not a GPU fault).
+
+Open issues: GPU
 cooling device / thermal zones; GPU OPPs and speed bin not checked against the stock
 pwrlevels (top stock level 0x22fce8c0 = 587 MHz); kmscon on tty1 must yield the DRM master
-to a compositor (logind seat / VT switch). Not flashed; BOOT/RECOVERY need the battery
-agent's next kernel with patch 0027 merged.
+to a compositor (logind seat / VT switch). Not flashed; the next BOOT needs patch 0030 merged
+into the kernel package (kexec tests used the r14/#15 Image; the GPU DTS was not yet
+kexec-tested on top of the r18 kernel).
 
 B1 result (`/var/tmp/b1-dcp.log` on the tablet, 10 s samples):
 - 19:38:43 wall charger detected: BC_STATUS 0x8b (VBUS, CHGTYP DCP), usb_type `[DCP]`, input limit
@@ -1197,3 +1201,6 @@ B1 result (`/var/tmp/b1-dcp.log` on the tablet, 10 s samples):
 
 So the off switch (MODE 0x04 + CHG_EN 0) really stops battery current, the DCP limit applies only
 on a detected wall charger, and the limit falls back to 475 mA on unplug.
+
+## 2026-11-17T19:48:56+07:00 flash
+- BOOT: 9f062cf61e8abe1c32b8d65149dcffa947485bf8490773a212be68d3f9b26dce build/archive/boot-shim-r18-9f062cf6.img
