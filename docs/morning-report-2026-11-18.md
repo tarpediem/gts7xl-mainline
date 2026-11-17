@@ -71,3 +71,21 @@ it needs root on the tablet (your password), which they do not type.
 To test (about 10 minutes, the tablet reboots twice, back on r20 at the end): from the PC,
 `tools/sensors-kexec-test.sh <root runner>`, or ask the coordinator to run it. Results land in
 `build/sensors-test-*/`.
+
+## Audio (speakers, overnight, no sound played)
+
+- **Crackle**: the data path is clean. A silent loopback test (speakers muted, the amplifiers
+  echo what they receive back over the bus) shows the speaker data arrives bit-exact; PipeWire
+  shows no device underruns even under full CPU load; the amplifiers' noise gates and ramps are
+  off. So the crackle is not a bus or driver error. Likely suspects: the speakers being driven
+  past their limits at high volume (no Samsung protection yet), or the amplifier boost. To find
+  out, a short test with you this morning at low volume while recording the amplifiers' current
+  sense.
+- **Speaker protection (the Android "Cirrus" part)**: Samsung's protection firmware and your
+  tablet's factory calibration are found and load on mainline; a silent run with calibration
+  worked. Not switched on yet (two details to fix first). Next: a low-volume listening test with
+  protection on, then it can replace the simple bass filter and give the bass back safely.
+- **Microphones and USB-C headset**: investigated only. Mics need a small kernel change (same
+  setup as the Qualcomm RB5 board). USB-C headsets need USB host mode first (digital dongles);
+  analog USB-C headsets are not supported by this hardware path.
+- Nothing flashed for audio; BOOT r20/r21 audio is unchanged.
