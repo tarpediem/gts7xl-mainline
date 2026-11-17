@@ -23,8 +23,8 @@ Status: early bring-up. Expect rough edges.
 - Touchscreen: new driver for the ST FTS1BA90A, over I2C with GPI DMA.
 - UFS storage.
 - USB networking (RNDIS/NCM) and the postmarketOS initramfs debug shell over USB
-  (`telnet 172.16.42.1`), plus kexec and module push over USB
-  (`docs/runbooks/iterate-over-usb.md`).
+  (`telnet 172.16.42.1`). Tooling for kexec and module push over USB is in place
+  (`docs/runbooks/iterate-over-usb.md`) but not yet tested on the device.
 
 ## What does not work yet
 
