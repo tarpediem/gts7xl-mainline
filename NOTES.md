@@ -899,3 +899,82 @@ password → root, `nmcli device wifi rescan` as the user OK, `bluetoothctl list
 
 The console apk on the tablet is the second r11 build (unit made static); the other four on the
 tablet are from the first r11 build (same content, different apk timestamps).
+
+## 2026-11-17 — r16: battery and charging (MAX77705 charger + fuel gauge), built, not flashed
+
+Kernel `linux-samsung-gts7xl-7.3.4-r15` (uname `#16`), linux `gts7xl` e46430cdb, 0d11871b2,
+4339a19be = aport patches 0021-0023. Config: `MFD_MAX77705`, `CHARGER_MAX77705`,
+`BATTERY_MAX17042`, `QCOM_SPMI_ADC5` (+ `QCOM_VADC_COMMON`, `MFD_SIMPLE_MFD_I2C`) built in,
+so nothing comes from the root filesystem's modules of the r14 build.
+
+Hardware (stock live DT + vendor kernel): MAX77705 on i2c0 (QUP SE0 0x980000, FIFO mode, no
+GPI change): top 0x66, charger 0x69 (registers 0xB0+), fuel gauge 0x36, USB-C/MUIC 0x25 (the
+initramfs hook's address: not claimed by any driver, untouched). Interrupt: PM8150L GPIO11
+(`chg_int`, level low, pull-up). PCA9468 direct charger 0x57: not described, no driver.
+Battery thermistor: PM8150L ADC5 AMUX THM1 (0x4d), stock `adc-temp` with
+`battery,thermal_source = 2` (ADC). The fuel gauge TEMP register is not a measurement on this
+board (the vendor driver writes the ADC temperature into it): do not trust the battery's `temp`.
+
+Mainline changes:
+- max17042: `maxim,max77705-battery` matched the of_match_table but has no i2c_device_id,
+  so probe returned -ENODEV; falls back to the OF match data.
+- max77705 charger: optional safety monitor, enabled by an `io-channels`/`battery-temp`
+  channel: CHG_EN off while configuring; CC = battery `constant-charge-current-max`, CHGIN =
+  `input-current-limit-microamp`, CV = `constant-charge-voltage-max`; sysfs writes clamped to
+  them; every 10 s: watchdog kick (WDT enabled, as stock), thermistor read, alert-celsius window
+  with 2 C hysteresis (failed/implausible read = no charging), safety timer, limits re-checked
+  and rewritten if found above ours (else no charging); health OVERHEAT/COLD/SAFETY_TIMER;
+  charger `temp` = thermistor. Also fixed: status with CHG_EN off read "Charging"; CHGIN was
+  written as mA/25 (stock and the read-back use mA/25 - 1); NULL bat_info before init.
+- DTS: MAX77705 MFD, charger@69, fuel-gauge@36 (no interrupt: only SALRT_Th = 0xff00 written),
+  `pm8150l_adc` channel 0x4d `batt_therm`, simple-battery node.
+
+### Safety report: every charger value, stock source, ours
+
+Stock sources: `reference/live/live.dts` (local, gitignored; line numbers of the T976BXXS7DXH1
+capture) and the vendor kernel `kernel_samsung_sm8250` (droidian-gts7xl, 97e4a5b90),
+`drivers/battery_v2/max77705_charger.c` (`chg.c`) / `max77705_fuelgauge.c` (`fg.c`).
+
+| Parameter | Stock | Source | Ours |
+|---|---|---|---|
+| Float (CV) voltage | 4380 mV new battery; 4270 mV from 1000 cycles | live.dts:34434 `battery,chg_float_voltage`; :34474 `battery,age_data` | **4270 mV** (CV reg 0x0b), lowest stock float |
+| voltage-max-design | 4380 mV | live.dts:34434 | 4380 mV (information only; not used for CV) |
+| Fast charge current | 450-3150 mA by cable; 975 mA below 5 C; max 3150 | live.dts:34542-34590 cable-info (min 0x1c2 = 450 mA, group 7 :34578); :34449; :34472 | **450 mA** (CC reg 9 = 9 x 50 mA, stock encoding chg.c:709) |
+| Input current limit (CHGIN) | 475-1800 mA by cable (USB SDP 475) | live.dts:34542 current_group_1 (0x1db); :34488 max 3000 | **475 mA** (reg 18, stock encoding chg.c:673) |
+| Termination (top-off) current | 150 mA at init (500 mA set later by sec-battery) | chg.c:1045 | 150 mA (upstream init value, = stock init) |
+| Top-off timer | 30 min (CNFG_03 = 0x9f) | reference/live/dmesg.txt register dump | 30 min (upstream) |
+| HW fast-charge timer | disabled | chg.c:1012 | disabled (upstream, = stock) |
+| SW charging timer | USB 10 h, TA 5 h, HV 3 h | live.dts:34431 `usb_charging_total_time` 36000 s | **10 h** of charging since plug-in, then off until unplugged |
+| Restart threshold / prequal | disabled / disabled | chg.c:1012 | same (upstream) |
+| Battery temperature, cold | stop < 0.0 C, recover 2.0 C | live.dts:34392-34393 | stop < 0 C, recover >= 2 C |
+| Battery temperature, hot | swelling: stop >= 42.0 C, recover 40.0 C (stop >= 50 C) | live.dts:34442-34443, :34390 | **stop >= 41 C, recover <= 39 C** (1 C margin: mainline 100k NTC table reads ~0.5 C low near 42 C vs the stock table live.dts:34363) |
+| Thermistor | PM8150L ADC5 0x4d, ratiometric, 200 us settle | live.dts:34501 io-channels, :5138 | same channel, mainline 100K_PU table |
+| Watchdog | enabled, kicked by sec-battery | chg.c:1102 | enabled, kicked every 10 s |
+| BAT-to-SYS OCP | 6200 mA (CNFG_05 0xf) | live.dts:34435 | 4800 mA (upstream, lower) |
+| VCHGIN regulation | 4.6 V with input / 4.5 V | chg.c:1063, :1067 | 4.5 V (upstream) |
+| Direct charging (PCA9468) | up to 6000 mA | live.dts:28145 | **off: not described** |
+| Fuel gauge sense resistor | fg_resistor 5 -> 1.5625 uV / 2 mOhm | live.dts:34522, fg.c:640 | 2000 uOhm |
+| Capacity (design) | 10090 mAh | live.dts:34493 | 10090000 uAh |
+
+Not reproduced (more conservative or not needed at 450 mA): low-temperature current steps,
+swelling recharge at 4.15 V, recharge after full (RSTRT off: charging restarts on re-plug),
+cable detection (BC1.2/PD/AFC: no MUIC driver, so one set of values for every cable).
+Concerns: at 475 mA input the tablet may still discharge on USB with the screen on;
+a suspend longer than the watchdog period stops charging (no suspend is used today).
+
+Tests: `tests/test_dts_battery.py` (DT values <= stock, read from live.dts when present, no
+PCA9468, drivers built in); `test_dts_gpi.py` i2c0 guard updated. 193 passed with unicorn,
+`test_flash.sh` OK. `dtbs_check` of the board: no new warning (log `build/logs/r15-dtbs-check.log`).
+`tools/build-recovery-shim.sh --cmdline-from IMG` keeps the cmdline (UUIDs) of an earlier image.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/archive/boot-shim-r16-e94bda17.img` (BOOT) | `e94bda17c1aa2266` |
+| `build/archive/recovery-shim-r16-80aca546.img` (RECOVERY) | `80aca5463ec2f1ff` |
+| `build/shim-Image` | `6b9b71c9a59cf649` |
+| `build/vmlinuz` | `6be2dc50f60cc380` |
+| `build/initramfs` | `669c7635ef2bc226` |
+| `build/dtbs/sm8250-samsung-gts7xl.dtb` | `09cb70daa6b8ccb4` |
+
+Both images carry the r15 cmdline byte for byte (`pmos_boot_uuid=1f14fc28-…`,
+`pmos_root_uuid=793aa611-…`). Not flashed.

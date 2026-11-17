@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Build the RECOVERY and BOOT images that carry the boot shim, from a pmbootstrap export.
 #
-#   tools/build-recovery-shim.sh [BUILD_DIR]        (default: build/)
+#   tools/build-recovery-shim.sh [--cmdline-from IMG] [BUILD_DIR]   (default: build/)
+#
+#   --cmdline-from IMG  use the kernel cmdline of IMG (a previous recovery-shim/boot-shim
+#                       image) instead of the one pmbootstrap wrote into boot.img: a kernel
+#                       update for an already written root filesystem must keep its UUIDs.
 #
 # Needs in BUILD_DIR: boot.img, vmlinuz, dtbs/sm8250-samsung-gts7xl.dtb (pmbootstrap export)
 # and stock/boot-stock.img, stock/recovery.img (stock T976B firmware).
@@ -14,8 +18,12 @@
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-build=$(realpath "${1:-$root/build}")
 tools=$root/tools
+cmdline_from=""
+if [ "${1:-}" = "--cmdline-from" ]; then
+    cmdline_from=$(realpath "$2"); shift 2
+fi
+build=$(realpath "${1:-$root/build}")
 
 for f in boot.img vmlinuz dtbs/sm8250-samsung-gts7xl.dtb stock/boot-stock.img stock/recovery.img; do
     [ -e "$build/$f" ] || { echo "build-recovery-shim.sh: missing $build/$f" >&2; exit 1; }
@@ -27,7 +35,15 @@ python3 "$tools/mkshim.py" --kernel "$build/vmlinuz" --dtb "$build/dtbs/sm8250-s
 # blob since the QCA6390 firmware and modules went in (tools/xz_ramdisk.py).
 python3 "$tools/xz_ramdisk.py" "$build/boot.img" "$build/boot-xz.img"
 # Header fields of the stock boot image + the pmbootstrap cmdline (root/boot UUIDs).
-python3 "$tools/sign_boot.py" --stock "$build/stock/boot-stock.img" "$build/boot-xz.img" "$build/boot-signed.img"
+if [ -n "$cmdline_from" ]; then
+    cmdline=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import sign_boot
+print(sign_boot.get_cmdline(open(sys.argv[2], "rb").read()))' "$tools" "$cmdline_from")
+    echo "cmdline from $cmdline_from: $cmdline"
+    python3 "$tools/sign_boot.py" --stock "$build/stock/boot-stock.img" --replace-cmdline "$cmdline" \
+        "$build/boot-xz.img" "$build/boot-signed.img"
+else
+    python3 "$tools/sign_boot.py" --stock "$build/stock/boot-stock.img" "$build/boot-xz.img" "$build/boot-signed.img"
+fi
 # Kernel slot = shim; dtb and recovery_dtbo = the stock recovery's own, byte for byte.
 python3 "$tools/mkrecovery.py" --stock-recovery "$build/stock/recovery.img" --stock-dt \
     --kernel "$build/shim-Image" --stock-footer "$build/boot-signed.img" "$build/recovery-shim.img"

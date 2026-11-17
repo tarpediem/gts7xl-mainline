@@ -49,6 +49,9 @@ def test_i2c5_keeps_its_dmas():
     assert "/delete-property/ dmas" not in b and "/delete-property/ dma-names" not in b
 
 
-def test_i2c0_unchanged():
+def test_i2c0_dma_untouched():
+    """i2c0 (MUIC/USB path) keeps the sm8250.dtsi DMA setup; since r15 it has the MAX77705
+    child nodes (tests/test_dts_battery.py), nothing else."""
     b = block(DTS.read_text(), "i2c0")
-    assert b.strip() == 'status = "okay";'
+    assert b is not None and 'status = "okay";' in b
+    assert "dmas" not in b and "dma-names" not in b and "clock-frequency" not in b
