@@ -323,3 +323,29 @@ Fix: `linux` 5954f55b7 — the simple-framebuffer node holds MMCX (nominal), the
 Expected on screen next time: the bootloader's last picture, steady. The kernel console needs an MDSS/DSI and
 panel driver (command-mode panel: nobody sends frames). Check after boot: `mdss_gdsc` on, `mmcx` at 256,
 `vreg_l9a_1p2` enabled with a framebuffer consumer.
+
+## 2026-11-17T10:13:24+07:00 flash
+- RECOVERY: aedae4cd8b5b8a11813d1eaef3e0aa33fed85947ccfc45e6afb4af907a5c2e9c build/recovery-shim.img
+
+## 2026-11-17 — phase 2: MDSS/DSI0 + S6TUUM3 panel driver (not flashed)
+
+`linux` 9deabe798 (driver `panel-samsung-s6tuum3.c` + binding), 657f28493 (DTS: mdss, dsi0, phy, panel,
+`octa-vdd` regulator on GPIO 135, pin states from the stock tree). `pmaports` 405666f: kernel r5
+(patches 0005/0006, `CONFIG_DRM_PANEL_SAMSUNG_S6TUUM3=y`). Full report:
+`.superpowers/sdd/2026-11-17-phase0-preparation/panel-driver-report.md`.
+
+- Power sequence copied from the vendor kernel: vddlcd on + 10 ms → DSI LP-11 → reset 1 ms low / 1 ms high
+  (skipped if TCON_RDY already high) → 200 ms + up to 300 ms for TCON_RDY → on list (HS) → brightness packet →
+  display on + 17 ms → first time: F8/F9. Off: display off + 100 ms (no sleep-in), DSI off, reset low,
+  10 ms, vddlcd off.
+- DSC 1.1, 2 slices 1400x12, 8 bpc/8 bpp; PPS sent as the vendor's 88 bytes through register 9Eh.
+- Tablet read before the build: GPIO 135 high, reset high, TCON_RDY low (it was high in the previous boot).
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` | `ee6f68598f5296c8` |
+| `build/recovery-shim-signed.img` | `ccd2fc135db69ac8` |
+| `build/shim-Image` | `4ad570ddb2b8c67f` |
+
+Expected: kernel console (fbcon) on the panel after msm binds, brightness 128/255. If not: dmesg for
+`TCON not ready`, DSI `write failed`, DPU pp/TE timeouts.
