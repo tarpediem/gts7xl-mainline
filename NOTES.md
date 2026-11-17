@@ -496,3 +496,46 @@ dmesg after telnetd, `stmfts1b … fw 0x…`, touch on buffyboard. kexec/usbsh n
   FTS1BA90A fw 0x0113, 1751x2799, 53x33 channels; buffyboard restarted; typing by finger on the on-screen
   keyboard works with the correct orientation. Display, USB, UFS unchanged. kexec + module push tooling in place
   (docs/runbooks/iterate-over-usb.md), not yet exercised on the device.
+
+## 2026-11-17 — r11: power key and volume down, short press toggles the display (not flashed, not kexec'd)
+
+r10 on hardware (read only over usbsh): input devices were gpio-keys (Vol Up), the touchscreen and buffyboard; no
+pm8941_pwrkey / pm8941_resin. `c440000.spmi:pmic@0:pon@800` existed with no driver bound. Cause: the pwrkey and resin
+nodes are children of `pon@800` (`qcom,pm8998-pon`), and only the qcom-pon driver creates their devices
+(`devm_of_platform_populate`). `CONFIG_POWER_RESET_QCOM_PON` was `=m` and the module was not in the initramfs, so
+pm8941-pwrkey (built in) never saw a device. The DT nodes were fine (`&pon_pwrkey` okay, `&pon_resin` okay with
+`KEY_VOLUMEDOWN`). Patch 0003 (warm PS_HOLD at probe) did not break anything: it simply never ran until now.
+
+Fix: `CONFIG_POWER_RESET_QCOM_PON=y` (no `mode-*` properties in pm8150.dtsi, so its reboot-mode registers no mode and
+writes nothing). Guard: `tests/test_kconfig_pon.py`. No linux/ source change; the DTB is byte-identical to r10.
+
+Power key in the debug shell: hook `60-gts7xl-powerkey.sh` (device package), forks and returns. It reads 24-byte
+`input_event` records from the pm8941_pwrkey event node with `dd bs=24 count=1 | od -tu1` (fd kept open), measures the
+press from the event timestamps; a press < 3 s toggles: off = `inhibited=1` on the touchscreen input device (input
+core calls close(): stmfts1b stops scanning, masks its IRQ) then `fb0/blank=1` (DRM fbdev: CRTC disabled, panel
+disable/unprepare); on = `fb0/blank=0` then `inhibited=0`. ≥ 3 s: logged, nothing else (PMIC long-press reset still
+applies). State is kept in the hook, not read from fb0: the vt keyboard handler unblanks the console on any key press,
+so a volume key can light the screen while touch stays inhibited (next short press restores both). Messages go to
+/dev/kmsg as `gts7xl-powerkey: …`. `gts7xl.nopowerkey` on the command line disables it.
+Test: `tests/test_powerkey_hook.py` runs the hook under the pmbootstrap native chroot's busybox (ash/dd/od) on a fake
+/sys and an event file.
+
+Next step: s2idle suspend on power key (needs wakeup sources, GDSC/regulator handling and the panel's suspend path).
+
+Sources: pmaports `linux-samsung-gts7xl-7.3.4-r11` (config only), `device-samsung-gts7xl-1-r8`.
+Tests: 111 passed (regulator grid and GPI included), `test_flash.sh` OK.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` (copy: `build/archive/recovery-shim-r11-7b0787e6.img`) | `7b0787e6858c02f4` |
+| `build/recovery-shim-signed.img` | `2f890419ad7a28b9` |
+| `build/shim-Image` | `353efe4baa9ff67f` |
+| `build/vmlinuz` (kexec payload) | `67d643040729a791` |
+| `build/initramfs` (kexec payload) | `9dc5888e72ed6406` |
+| `build/dtbs/sm8250-samsung-gts7xl.dtb` (= r10) | `c7ce97975c4e3a48` |
+
+kexec (owner present): `tools/kexec-push.sh` (dry run: pulls /sys/firmware/fdt, copies /memory into the DTB, pushes
+Image/DTB/initramfs to /tmp/kx, `kexec -l … --reuse-cmdline`, `kexec -e`). Expected after the jump:
+`/proc/bus/input/devices` lists pm8941_pwrkey and pm8941_resin, dmesg `PS_HOLD reset type set to warm (reboot=warm)`
+and `gts7xl-powerkey: watching /dev/input/eventN`; then: short press → screen off, touches ignored;
+short press → screen on, typing works. First real use of the panel's disable/unprepare → prepare/enable path.

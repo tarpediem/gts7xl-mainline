@@ -19,6 +19,8 @@ The host has 172.16.42.2 on the USB RNDIS link, `python3`, `dtc` (`fdtget`/`fdtp
   loaded by the hook `50-gts7xl-modules.sh` in the background once telnetd runs (or after
   30 s), then buffyboard is restarted to pick up the new input device. `gts7xl.nomodules`
   on the command line skips it.
+- Power key (r11+): hook `60-gts7xl-powerkey.sh`, a short press (< 3 s) toggles the display
+  (`fb0/blank`) and the touchscreen (`inhibited`); `gts7xl.nopowerkey` disables it.
 - Built in on purpose (the debug shell must come up even if a module breaks): display
   (msm, panel), UFS, USB, regulators, geni-i2c and GPI DMA. geni-i2c drives i2c0, where the
   initramfs switches the USB data lines through the MAX77705 MUIC; GPI DMA is listed in
