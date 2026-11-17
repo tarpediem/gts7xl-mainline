@@ -67,24 +67,56 @@ def test_refuses_table_without_dt_table_magic(tmp_path):
     with pytest.raises(SystemExit):
         run(tmp_path, boot, stock)
 
-def test_stock_footer_is_grafted_unchanged(tmp_path):
-    """--stock-footer keeps the stock recovery's own vbmeta blob and footer, byte for byte."""
-    boot, stock = make_inputs(tmp_path)
-    stock.write_bytes(b"S" * (1 << 20))
+def make_stock_with_footer(stock, payload):
+    stock.write_bytes(payload)
     subprocess.run(["avbtool", "add_hash_footer", "--image", str(stock), "--partition_size", str(PART),
                     "--partition_name", "recovery", "--algorithm", "SHA256_RSA4096",
                     "--key", str(mkrecovery.KEY), "--rollback_index", "7"], check=True)
+
+def test_stock_footer_keeps_stock_vbmeta_and_adds_the_samsung_trailer(tmp_path):
+    """--stock-footer: stock vbmeta blob byte for byte at its stock offset (what One UI reads),
+    SEANDROIDENFORCE right after the image and original_image_size = image + 16, the shape of
+    the Magisk-patched BOOT this bootloader already boots."""
+    boot, stock = make_inputs(tmp_path)
+    make_stock_with_footer(stock, b"S" * (1 << 20))
     out = tmp_path / "recovery.img"
     mkrecovery.main(["--stock-recovery", str(stock), "--recovery-dtbo", str(tmp_path / "t"),
                      "--stock-footer", str(boot), str(out)])
     s, o = stock.read_bytes(), out.read_bytes()
-    assert len(o) == PART and o[-64:] == s[-64:]
+    assert len(o) == PART
     voff, vsize = struct.unpack_from(">QQ", s, PART - 64 + 20)
     assert o[voff:voff + vsize] == s[voff:voff + vsize]
     assert o[:8] == b"ANDROID!" and set(o[voff + vsize:PART - 64]) <= {0}
+    # footer: only original_image_size (bytes 12..19) differs from stock
+    fs, fo = s[-64:], o[-64:]
+    assert [i for i in range(64) if fs[i] != fo[i]] and all(12 <= i < 20 for i in range(64) if fs[i] != fo[i])
+    orig = struct.unpack_from(">Q", fo, 12)[0]
+    assert o[orig - 16:orig] == b"SEANDROIDENFORCE"
+    assert (orig - 16) % 4096 == 0 and set(o[orig:voff]) <= {0}     # trailer right after the last page
+    assert o.count(b"SEANDROIDENFORCE") == 1
     parts = tmp_path / "parts"
     subprocess.run(["unpack_bootimg", "--boot_img", str(out), "--out", str(parts)], check=True, capture_output=True)
     assert (parts / "kernel").read_bytes() == (tmp_path / "k").read_bytes()
+    assert (parts / "recovery_dtbo").read_bytes() == (tmp_path / "t").read_bytes()
+    subprocess.run(["avbtool", "info_image", "--image", str(out)], check=True, capture_output=True)
+
+def test_hash_descriptor_image_size(tmp_path):
+    _, stock = make_inputs(tmp_path)
+    make_stock_with_footer(stock, b"S" * 12288)
+    s = stock.read_bytes()
+    voff, vsize = struct.unpack_from(">QQ", s, PART - 64 + 20)
+    assert mkrecovery.hash_descriptor_image_size(s[voff:voff + vsize]) == 12288
+    assert mkrecovery.hash_descriptor_image_size(b"junk" * 100) is None
+
+def test_stock_footer_refuses_image_beyond_the_stock_hashed_size(tmp_path, monkeypatch):
+    """The bootloader loads descriptor image_size bytes: an image longer than that would be cut."""
+    boot, stock = make_inputs(tmp_path)
+    make_stock_with_footer(stock, b"S" * (1 << 20))
+    monkeypatch.setattr(mkrecovery, "hash_descriptor_image_size", lambda blob: 8192)
+    with pytest.raises(SystemExit) as e:
+        mkrecovery.main(["--stock-recovery", str(stock), "--recovery-dtbo", str(tmp_path / "t"),
+                         "--stock-footer", str(boot), str(tmp_path / "o.img")])
+    assert "hashed size" in str(e.value) and not (tmp_path / "o.img").exists()
 
 def test_stock_footer_needs_room_before_stock_vbmeta(tmp_path):
     boot, stock = make_inputs(tmp_path)

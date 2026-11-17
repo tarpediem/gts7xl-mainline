@@ -153,7 +153,7 @@ def patched_dtb(uc, addr):
 
 @needs_toolchain
 def test_shim_enters_the_image_with_the_abl_boot_data(shim, tmp_path):
-    from unicorn import arm64_const as c
+    c = pytest.importorskip("unicorn.arm64_const")
     abl = dtc(abl_dts(), tmp_path / "abl.dtb").read_bytes()
     uc, pc = emulate(shim, abl)
     kernel = 0xa0200000                                  # 0xa0080000 + KERNEL_OFFSET: no move needed

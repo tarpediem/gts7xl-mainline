@@ -24,7 +24,10 @@ exactly the device tree and overlays it gets from the stock recovery.
 blob and footer at their stock offsets. For a device that keeps its stock vbmeta: the
 recovery chain partition then verifies exactly as before on a normal boot (One UI sees no
 change); only booting RECOVERY itself reports a hash mismatch, which an unlocked
-bootloader tolerates the same way it tolerates the Magisk-patched BOOT.
+bootloader tolerates the same way it tolerates the Magisk-patched BOOT. Like that BOOT
+(the only modified image this bootloader is known to boot), the image ends with the
+16-byte Samsung trailer SEANDROIDENFORCE and the footer's original_image_size is the end
+of that trailer; vbmeta offset, size and blob stay the stock ones.
 """
 import argparse, struct, subprocess, sys, tempfile
 from pathlib import Path
@@ -35,6 +38,23 @@ import dtbo
 
 def die(msg):
     sys.exit(f"mkrecovery.py: {msg}")
+
+SAMSUNG_TRAILER = b"SEANDROIDENFORCE"
+
+def hash_descriptor_image_size(blob: bytes):
+    """image_size of the first hash descriptor of a vbmeta blob, None if there is none."""
+    if len(blob) < 256 or blob[:4] != b"AVB0":
+        return None
+    auth, = struct.unpack_from(">Q", blob, 12)
+    doff, dsize = struct.unpack_from(">QQ", blob, 96)
+    pos = 256 + auth + doff
+    end = min(pos + dsize, len(blob))
+    while pos + 24 <= end:
+        tag, nbytes = struct.unpack_from(">QQ", blob, pos)
+        if tag == 2:  # AVB_DESCRIPTOR_TAG_HASH
+            return struct.unpack_from(">Q", blob, pos + 16)[0]
+        pos += 16 + nbytes
+    return None
 
 def unpack(image: Path, outdir: Path) -> dict:
     res = subprocess.run(["unpack_bootimg", "--boot_img", str(image), "--out", str(outdir),
@@ -108,13 +128,19 @@ def main(argv=None):
         if footer[:4] != b"AVBf":
             out.unlink(); die("stock recovery has no AVB footer")
         voff, vsize = struct.unpack_from(">QQ", footer, 20)
-        img = out.read_bytes()
+        img = out.read_bytes() + SAMSUNG_TRAILER
         if len(img) > voff or voff + vsize > partition_size - 64:
             out.unlink(); die(f"image ({len(img)} bytes) overlaps the stock vbmeta blob at {voff}")
         blob = stock[voff:voff + vsize]
+        hashed = hash_descriptor_image_size(blob)
+        if hashed is not None and len(img) > hashed:
+            out.unlink(); die(f"image ({len(img)} bytes) is longer than the stock hashed size ({hashed}): "
+                              "the bootloader would load it cut")
+        footer = footer[:12] + struct.pack(">Q", len(img)) + footer[20:]
         out.write_bytes(img + b"\0" * (voff - len(img)) + blob
                         + b"\0" * (partition_size - 64 - voff - vsize) + footer)
-        print(f"OK {out} ({partition_size} bytes, stock AVB footer kept, recovery_dtbo {table_size} bytes)")
+        print(f"OK {out} ({partition_size} bytes, stock vbmeta kept, Samsung trailer at {len(img) - 16}, "
+              f"recovery_dtbo {table_size} bytes)")
         return
     subprocess.run(["avbtool", "add_hash_footer", "--image", str(out),
                     "--partition_size", str(partition_size), "--partition_name", "recovery",
