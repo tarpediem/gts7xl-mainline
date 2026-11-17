@@ -278,6 +278,12 @@ device() {
 			install -D -m600 -o0 -g0 "$c" "$R/etc/NetworkManager/system-connections/$(basename "$c")"; n=$((n + 1))
 		done
 		rm -rf "$t"; log "NetworkManager connections carried over: $n"
+		# Owner's choice: the user password = the home Wi-Fi key (as on pmOS); set without
+		# printing it. PASSWORD_FROM_WIFI=0 keeps the generated password instead.
+		if [ "${PASSWORD_FROM_WIFI:-1}" = 1 ] && [ "$n" -ge 1 ]; then
+			f=$(ls "$R"/etc/NetworkManager/system-connections/*.nmconnection | head -1)
+			sed -n 's/^psk=//p' "$f" | head -1 | sed "s/^/$USERNAME:/" | in_root chpasswd && log "user password set from the Wi-Fi key"
+		fi
 		# Bluetooth: same controller address as under pmOS (gts7xl-bt-addr derives it from
 		# the pmOS machine-id) and the pairings, so paired keyboards reconnect.
 		t=$(mktemp -d); chmod 700 "$t"

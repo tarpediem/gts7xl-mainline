@@ -1429,3 +1429,26 @@ root loop's partitions (UDISKS_IGNORE rule), the Wi-Fi connection was bound to `
 kept for gts7xl-bt-addr (same controller address D6:71:…) + /var/lib/bluetooth: keyboard
 paired/trusted again. Open: ufw.service fails at boot (kernel lacks xt_limit / ip6 rules
 modules: "Extension limit revision 0 not supported"), firewall partly applied.
+
+### 2026-11-17 — GNOME next to Omarchy/Hyprland (live tablet), user password
+
+Installed on the running tablet (not in the image): gnome-shell 51.1, gnome-session,
+gnome-control-center, nautilus, gnome-text-editor, gnome-console, xdg-desktop-portal-gnome,
+gnome-keyring (+ ~55 dependencies; gstreamer/gst-plugins-{base,bad}-libs 1.28.8 -> 1.28.9 as the
+only upgrades, the rest of the 4.5.0 snapshot untouched). pacman needs `--disable-sandbox` (kernel
+without Landlock) and the ALARM mirror as fallback (Omarchy's stable mirror 404s some files).
+SDDM autologin session = gnome.desktop (Hyprland/Omarchy still selectable; backup
+/root/autologin.conf.bak-pre-gnome). GNOME state checked over D-Bus: DSI-1 2800x1752@120 scale
+2.0, on-screen keyboard enabled, us layout, LANG en_US.UTF-8, over-amplification off,
+power-button-action nothing, default sink "Speakers (protected)", BT keyboard connected.
+Power key under GNOME: gts7xl-powerkey (touch inhibit) now also calls gts7xl-session-dpms
+(mutter PowerSaveMode 3/0 as the session user; tested off/on over SSH). fcitx5 (Omarchy user unit)
+does not start under GNOME (ExecCondition drop-in), squeekboard only under Hyprland. dconf
+defaults in /etc/dconf/db/local.d/00-gts7xl. GNOME blocks screenshots from SSH (Shell.Screenshot
+denied), so no grim-like capture there: owner photo instead.
+User password: the owner's home Wi-Fi key (set on the tablet from the saved connection, never
+printed); the generated build password was shredded on the host. The build script now does the
+same by default (PASSWORD_FROM_WIFI=1).
+Kernel config to add in the next rev: Landlock (CONFIG_SECURITY_LANDLOCK + in lsm=) for pacman's
+sandbox; netfilter matches for ufw (xt_limit and the other xt_* ufw uses, IPv6 tables:
+IP6_NF_IPTABLES/filter, "Extension limit revision 0 not supported").

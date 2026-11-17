@@ -1,0 +1,20 @@
+# gts7xl defaults for GNOME (system dconf db "local"; users can still change them).
+[org/gnome/desktop/a11y/applications]
+screen-keyboard-enabled=true
+
+[org/gnome/desktop/input-sources]
+sources=[('xkb', 'us')]
+
+[org/gnome/desktop/sound]
+allow-volume-above-100-percent=false
+
+[org/gnome/settings-daemon/plugins/power]
+# The power key only blanks the screen (gts7xl-powerkey + gts7xl-session-dpms).
+power-button-action='nothing'
+sleep-inactive-ac-type='nothing'
+
+[org/gnome/mutter]
+experimental-features=['scale-monitor-framebuffer']
+
+[org/gnome/settings-daemon/peripherals/touchscreen]
+orientation-lock=true

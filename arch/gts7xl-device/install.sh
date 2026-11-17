@@ -14,6 +14,7 @@ sed 's|/usr/libexec/gts7xl-powerkey|/usr/lib/gts7xl/gts7xl-powerkey|' "$f/gts7xl
 printf '\n[Install]\nWantedBy=multi-user.target\n' >> "$R/usr/lib/systemd/system/gts7xl-powerkey.service"
 inst 755 gts7xl-hypr-dpms usr/bin/gts7xl-hypr-dpms
 inst 755 gts7xl-volume usr/bin/gts7xl-volume
+inst 755 gts7xl-session-dpms usr/lib/gts7xl/gts7xl-session-dpms
 inst 644 60-gts7xl-speaker-protection.conf usr/share/pipewire/pipewire.conf.d/60-gts7xl-speaker-protection.conf
 inst 755 gts7xl-firstboot usr/lib/gts7xl/gts7xl-firstboot
 inst 644 gts7xl-firstboot.service usr/lib/systemd/system/gts7xl-firstboot.service
@@ -53,3 +54,17 @@ install -D -m644 "$f/hypr-gts7xl.lua" "$h/gts7xl.lua"
 grep -q 'require("hypr.gts7xl")' "$h/hyprland.lua" ||
 	printf '\n-- gts7xl device overrides (keep last)\nrequire("hypr.gts7xl")\n' >> "$h/hyprland.lua"
 chroot "$R" chown -R "$U:$U" "/home/$U/.config/hypr"
+# GNOME (if installed): dconf defaults, no squeekboard/fcitx5 there (GNOME's own OSK).
+if [ -d "$R/usr/share/gnome-shell" ]; then
+	inst 644 gnome-dconf-gts7xl etc/dconf/db/local.d/00-gts7xl
+	inst 644 dconf-profile-user etc/dconf/profile/user
+	chroot "$R" dconf update
+	a=$R/home/$U/.config/autostart; mkdir -p "$a"
+	for d in org.fcitx.Fcitx5.desktop sm.puri.Squeekboard.desktop; do
+		[ -e "$R/etc/xdg/autostart/$d" ] && { cp "$R/etc/xdg/autostart/$d" "$a/$d"; printf 'NotShowIn=GNOME;\n' >> "$a/$d"; }
+	done
+	# Omarchy starts fcitx5 as a user unit: not under GNOME (it takes over GNOME's own OSK input).
+	d=$R/home/$U/.config/systemd/user/omarchy-fcitx5.service.d; mkdir -p "$d"
+	printf '[Service]\nExecCondition=/bin/sh -c '"'"'case "$XDG_CURRENT_DESKTOP" in *GNOME*) exit 1;; esac'"'"'\n' > "$d/gts7xl-not-gnome.conf"
+	chroot "$R" chown -R "$U:$U" "/home/$U/.config/autostart" "/home/$U/.config/systemd"
+fi

@@ -1,0 +1,12 @@
+#!/bin/sh
+# gts7xl-session-dpms on|off: screen off/on in a GNOME session (mutter DisplayConfig
+# PowerSaveMode 3 = off, 0 = on), as the session user. Called by gts7xl-powerkey (root).
+# Does nothing when no gnome-shell runs (Hyprland handles the power key with its own bind).
+mode=0; [ "$1" = off ] && mode=3
+pid=$(pgrep -x gnome-shell | head -n1)
+[ -n "$pid" ] || exit 0
+uid=$(stat -c %u /proc/"$pid")
+user=$(id -nu "$uid")
+exec runuser -u "$user" -- env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+	busctl --user set-property org.gnome.Mutter.DisplayConfig /org/gnome/Mutter/DisplayConfig \
+	org.gnome.Mutter.DisplayConfig PowerSaveMode i "$mode"

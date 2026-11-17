@@ -83,14 +83,23 @@ set_blank() {
 	echo "$1" > "$sysfs/class/graphics/fb0/blank" 2>/dev/null || log "cannot write fb0/blank=$1"
 }
 
+# Graphical session that does not handle the power key itself (GNOME): DPMS over its bus.
+# Hyprland binds the key (gts7xl-hypr-dpms) and is left alone. Optional helper (Arch image).
+session_dpms() {
+	[ -x /usr/lib/gts7xl/gts7xl-session-dpms ] && /usr/lib/gts7xl/gts7xl-session-dpms "$1" 2>/dev/null
+	return 0
+}
+
 display_off() {
 	set_touch 1
 	set_blank 1
+	session_dpms off
 	log "display off"
 }
 
 display_on() {
 	set_blank 0
+	session_dpms on
 	set_touch 0
 	log "display on"
 }
