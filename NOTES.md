@@ -584,3 +584,14 @@ Tests: 121 passed, `test_flash.sh` OK.
 Flash (owner present, Download Mode): `tools/flash.sh --keep-vbmeta RECOVERY=build/recovery-shim.img`
 (dry run: `heimdall flash --RECOVERY build/recovery-shim.img --no-reboot`). Then, in the r12 debug shell:
 `tools/kexec-push.sh` (r12 → r12 is enough for a first test of the jump).
+
+## 2026-11-17T13:51:58+07:00 flash
+- RECOVERY: 3754a375133ef1fb14f4baf2a7163802eda4ab872c037639423d4c8d9ea31c88 /home/tarpediem/Work/samsung/gts7xl-mainline/build/recovery-shim.img
+
+## 2026-11-17 r12 — power key + first successful kexec
+- RECOVERY r12 (sha256 3754a375…): pm8941_pwrkey / pm8941_resin present, PS_HOLD warm reset set,
+  power key short press toggles display + touch (confirmed by hand).
+- `tools/kexec-push.sh` r12 → r12: "kexec_core: Starting new kernel", PSCI CPU1-7 killed, "Bye!", new kernel
+  boots with 8 CPUs, panel (TCON ready 334 ms), msm fb0, touch module, USB debug shell back. No reflash needed
+  for kernel/DTB iterations from now on.
+- Seen once on display-off: `dpu_encoder_helper_wait_for_irq *ERROR* encoder is disabled` (harmless so far).
