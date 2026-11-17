@@ -43,7 +43,7 @@ snapper, no LUKS (the pmOS initramfs could do both, out of scope for the first b
 
 ## 3. Building the root filesystem on the host
 
-Host: merdouille (x86_64, Omarchy). aarch64 code runs under qemu-user (binfmt): pmbootstrap
+Host: the build PC (x86_64, Omarchy). aarch64 code runs under qemu-user (binfmt): pmbootstrap
 already registers it; otherwise `qemu-user-static` + `qemu-user-static-binfmt`.
 
 1. **Base**: Arch Linux ARM generic aarch64 tarball (`ArchLinuxARM-aarch64-latest.tar.gz`,
@@ -120,7 +120,7 @@ already registers it; otherwise `qemu-user-static` + `qemu-user-static-binfmt`.
 ## 6. Backup before wiping (required)
 
 Over SSH, as root, to `build/backup-pmos-<date>/` (local only, 700, never committed):
-`/home/tarpediem`, `/etc` (NetworkManager connections hold the Wi-Fi key: keep root-only),
+`/home/<user>`, `/etc` (NetworkManager connections hold the Wi-Fi key: keep root-only),
 `/usr/lib/modules`, `/lib/firmware/qcom/sm8250/samsung`, `/var/lib/bluetooth`,
 SSH host keys, the list of installed packages, and a full `tar` of the pmOS root (~3 GB used).
 Rollback: `tools/write-userdata.sh build/rootfs-r15.img` then restore the tar (or just the tar

@@ -1115,7 +1115,7 @@ kernel 7.3.4-r18, uname `#19`.
 r18 on the tablet (kexec from r15, 19:31): `safety monitor: CC 450000 uA, CHGIN 475000 uA (DCP
 1800000 uA) …`, usb_type `[SDP]`, input_current_limit 475000, BC_STATUS 0x81, CNFG_09 0x92.
 Modules from `/usr/lib/modules/7.3.4-r18` (r17 directory removed, depmod run), hci0 and Wi-Fi
-(wlan0 192.168.100.111) up after kexec this time.
+(wlan0, home LAN address) up after kexec this time.
 
 **B1 battery-current proof on a wall charger: PASSED** (19:38-19:45, owner swapped the cable). A logger runs on the tablet
 (`systemd-run --unit=b1-dcp sh /tmp/b1-dcp.sh`, log `/var/tmp/b1-dcp.log`): it waits up to 30 min
