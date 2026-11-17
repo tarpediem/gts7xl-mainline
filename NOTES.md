@@ -400,3 +400,25 @@ Full report: `.superpowers/sdd/2026-11-17-phase0-preparation/touch-report.md`.
 
 Expected: dmesg `stmfts1b … fw 0x…`, `resolution 1752x2800`, input "STM FTS1BA90A Touchscreen"; finger works on
 buffyboard.
+
+## 2026-11-17T11:21:44+07:00 flash
+- RECOVERY: 2161d2e8fda699e0ccedd5ddea175dd1394f82fcb288b3d89b4ab72b711ca039 build/recovery-shim.img
+
+## 2026-11-17 — r7 did not boot; fallback r8 (not flashed)
+
+r7 (recovery-shim `2161d2e8…`): no USB gadget, white panel → early hang/panic before USB and msm bind; r6 was fine.
+Cause not known yet (pstore pending). Suspects in order: `gpi_dma0` enabled (new fw_devlink supplier of i2c0, GPI +
+SMMU), the touch probe blocking boot, the new L13A/L14A votes.
+
+r8: `linux` 6fa9d5cea (stmfts1b: `PROBE_PREFER_ASYNCHRONOUS`, ready poll ≤ ~1 s, echo poll ≤ ~0.5 s),
+ca16d990d (gpi_dma0 stays disabled, `/delete-property/ dmas, dma-names` on i2c5 → FIFO/SE-DMA mode).
+i2c0, gpi_dma0 and the QUP wrapper are identical to r6 in the compiled DTB. `pmaports`: kernel r8 (patches 0012/0013).
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` | `926ea2e3d47f34e5` |
+| `build/recovery-shim-signed.img` | `06a552934f95b5de` |
+| `build/shim-Image` | `b8d0ad4756e3a714` |
+
+If r8 still fails like r7: next bisect step is r8 without the L13A/L14A regulator nodes and touch node (i2c5 only).
+If SE5 is in GSI-only mode, i2c5 now fails to probe (no touch) instead of needing GPI.
