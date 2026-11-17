@@ -1,5 +1,6 @@
 # tests/test_sign_boot.py
 import struct, subprocess, sys
+import pytest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 import sign_boot
@@ -34,6 +35,48 @@ def test_cli_signs_and_sets_cmdline(tmp_path):
     assert "Partition Name:        boot" in info and "SHA256_RSA4096" in info
 
 def test_rejects_non_bootimg(tmp_path):
-    import pytest
     with pytest.raises(ValueError):
         sign_boot.copy_abl_fields(b"\0" * 4096, bytearray(b"\0" * 4096))
+
+KEY = Path(__file__).parent.parent / "tools" / "keys" / "testkey_rsa4096.pem"
+
+def add_footer(path, rollback):
+    subprocess.run(["avbtool", "add_hash_footer", "--image", str(path), "--partition_size", "1048576",
+                    "--partition_name", "boot", "--algorithm", "SHA256_RSA4096", "--key", str(KEY),
+                    "--rollback_index", str(rollback)], check=True)
+
+def rollback_of(path):
+    info = subprocess.run(["avbtool", "info_image", "--image", str(path)], capture_output=True, text=True, check=True).stdout
+    return int(next(l for l in info.splitlines() if l.startswith("Rollback Index:")).split(":")[1])
+
+def sign(tmp_path, *extra):
+    out = tmp_path / "boot-signed.img"
+    subprocess.run([sys.executable, "tools/sign_boot.py", "--stock", str(tmp_path / "stock.img"),
+                    "--cmdline", "console=tty0", *extra, str(tmp_path / "pmos.img"), str(out)], check=True)
+    return out
+
+def test_rollback_index_from_stock_footer(tmp_path):
+    mkimg(tmp_path / "stock.img", ("13.0.0", "2024-08"), "STOCKBOARD", "0x02000000")
+    add_footer(tmp_path / "stock.img", 7)
+    mkimg(tmp_path / "pmos.img", ("16.0.0", "2026-11"), "PMOS", "0x01000000")
+    assert rollback_of(sign(tmp_path)) == 7
+
+def test_rollback_index_override(tmp_path):
+    mkimg(tmp_path / "stock.img", ("13.0.0", "2024-08"), "STOCKBOARD", "0x02000000")
+    add_footer(tmp_path / "stock.img", 7)
+    mkimg(tmp_path / "pmos.img", ("16.0.0", "2026-11"), "PMOS", "0x01000000")
+    assert rollback_of(sign(tmp_path, "--rollback-index", "42")) == 42
+
+def test_rollback_index_zero_without_stock_footer(tmp_path):
+    mkimg(tmp_path / "stock.img", ("13.0.0", "2024-08"), "STOCKBOARD", "0x02000000")
+    mkimg(tmp_path / "pmos.img", ("16.0.0", "2026-11"), "PMOS", "0x01000000")
+    assert rollback_of(sign(tmp_path)) == 0
+
+@pytest.mark.parametrize("which", ["src", "dst"])
+def test_rejects_header_version_not_2(tmp_path, which):
+    mkimg(tmp_path / "stock.img", ("13.0.0", "2024-08"), "STOCKBOARD", "0x02000000")
+    good = (tmp_path / "stock.img").read_bytes()
+    bad = bytearray(good); bad[40:44] = struct.pack("<I", 1)
+    src, dst = (bytes(bad), bytearray(good)) if which == "src" else (good, bad)
+    with pytest.raises(ValueError):
+        sign_boot.copy_abl_fields(src, dst)
