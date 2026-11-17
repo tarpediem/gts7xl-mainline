@@ -787,3 +787,10 @@ Risks noted:
 Not fixed, noted: buffyboard 3.6.0 sends `.`, `+`, `*`, `%` as KEY_KPDOT / KEY_KPPLUS /
 KEY_KPASTERISK, but its uinput device does not declare those keys, so the kernel drops them
 (those characters cannot be typed on the on-screen keyboard in the debug shell).
+
+## 2026-11-17T16:43:00+07:00 userdata write
+- image: `rootfs-r15.img`, 1463812096 bytes, sha256 c021a80ac9801c3f6daac6d4988108af7924c71a9a2ec09ef24d978e2a3a4152
+- target: /dev/sda37 (PARTNAME=userdata), start byte 12693012480, 243138539520 bytes
+- result: OK, 1463812096 bytes written, read back sha256 matches
+- 2026-11-17 kexec boot into the rootfs on userdata (cmdline of build/boot.img, no debug shell): systemd
+  "running" with no failed units, root /dev/loop0p2 auto-grown to 219.7G, SSH key login over USB OK.
