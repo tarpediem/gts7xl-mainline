@@ -32,6 +32,8 @@ inst 644 gts7xl-wheel.rules usr/share/polkit-1/rules.d/40-gts7xl-wheel.rules
 inst 644 sshd-keyonly.conf etc/ssh/sshd_config.d/40-gts7xl-keyonly.conf
 inst 644 gts7xl-console.sysctl usr/lib/sysctl.d/60-gts7xl-console.conf
 inst 644 logind-powerkey.conf etc/systemd/logind.conf.d/40-gts7xl-powerkey.conf
+inst 644 logind-lid.conf etc/systemd/logind.conf.d/40-gts7xl-lid.conf
+inst 644 81-gts7xl-sensors.rules etc/udev/rules.d/81-gts7xl-sensors.rules
 inst 644 kmscon.conf etc/kmscon/kmscon.conf
 # kmscon on the text VTs (tty2+, logind autovt); SDDM/Hyprland keep tty1.
 ln -sfn /usr/lib/systemd/system/kmsconvt@.service "$R/etc/systemd/system/autovt@.service"

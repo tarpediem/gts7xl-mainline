@@ -1,0 +1,5 @@
+# gts7xl sensors through the SLPI (libssc, iio-sensor-proxy). The SLPI already turns the
+# LSM6DSO axes into the Android device frame (stock registry lsm6dso_0_platform.orient:
+# x = -y, y = +x, z = +z), so no remapping is expected here; the matrix is set explicitly
+# so it can be corrected in one place after the first test on the tablet.
+SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp", ENV{ACCEL_MOUNT_MATRIX}="1, 0, 0; 0, 1, 0; 0, 0, 1"

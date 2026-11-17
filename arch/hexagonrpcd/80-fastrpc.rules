@@ -1,0 +1,2 @@
+# FastRPC device nodes (DSP remote procedure calls) for hexagonrpcd
+SUBSYSTEM=="misc", KERNEL=="fastrpc-*", GROUP="fastrpc", MODE="0660"

@@ -1,0 +1,3 @@
+# Sensor registry written by the SLPI (calibration updates)
+d /var/lib/hexagonrpcd 0750 fastrpc fastrpc -
+d /var/lib/hexagonrpcd/sensors-registry 0750 fastrpc fastrpc -

@@ -1,0 +1,35 @@
+# hexagonrpcd for the Samsung Galaxy Tab S7+ 5G (gts7xl): serves the sensor registry and the
+# DSP libraries to the SLPI (sdsp) so libssc / iio-sensor-proxy can read the accelerometer,
+# gyroscope, magnetometer and light sensors. Not in the Arch Linux ARM repositories.
+#   CARCH=aarch64 makepkg   (on the tablet: needs meson and ninja)
+pkgname=hexagonrpcd
+pkgver=0.5.0.r20.gda7a374
+pkgrel=1
+pkgdesc="Server for FastRPC remote procedure calls from Qualcomm DSPs (sdsp unit for gts7xl)"
+arch=(aarch64)
+url="https://github.com/linux-msm/hexagonrpc"
+license=(GPL-3.0-or-later)
+depends=(glibc)
+makedepends=(git meson ninja)
+_commit=da7a3742ab8d5273a281b70ee11f16fb2cb6a690
+source=("git+$url.git#commit=$_commit"
+	hexagonrpcd-sdsp.service
+	hexagonrpcd.sysusers
+	hexagonrpcd.tmpfiles
+	80-fastrpc.rules)
+sha256sums=(SKIP SKIP SKIP SKIP SKIP)
+
+build() {
+	arch-meson hexagonrpc build
+	meson compile -C build
+}
+
+package() {
+	meson install -C build --destdir "$pkgdir"
+	# Upstream's three units run every DSP; the gts7xl only needs the sdsp one (ours).
+	rm -f "$pkgdir"/usr/lib/systemd/system/hexagonrpcd-*.service
+	install -Dm644 hexagonrpcd-sdsp.service "$pkgdir/usr/lib/systemd/system/hexagonrpcd-sdsp.service"
+	install -Dm644 hexagonrpcd.sysusers "$pkgdir/usr/lib/sysusers.d/hexagonrpcd.conf"
+	install -Dm644 hexagonrpcd.tmpfiles "$pkgdir/usr/lib/tmpfiles.d/hexagonrpcd.conf"
+	install -Dm644 80-fastrpc.rules "$pkgdir/usr/lib/udev/rules.d/80-fastrpc.rules"
+}

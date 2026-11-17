@@ -1,0 +1,21 @@
+[Unit]
+Description=Server for FastRPC remote procedure calls from the sensor DSP (SLPI)
+ConditionPathExists=/dev/fastrpc-sdsp
+Before=iio-sensor-proxy.service
+
+[Service]
+# Root of the served files: /usr/share/qcom/<soc>/<vendor>/<codename>, guessed from the
+# device tree (here /usr/share/qcom/sm8250/Samsung/gts7xl).
+ExecStart=/usr/bin/hexagonrpcd -f /dev/fastrpc-sdsp -d sdsp -s
+Restart=always
+RestartSec=3
+User=fastrpc
+Group=fastrpc
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hexagonrpcd
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
