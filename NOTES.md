@@ -487,3 +487,12 @@ Tools: `tools/usbsh.py` (telnet run / base64 pull / HTTP+wget push), `tools/kexe
 
 Expected: `gpi 900000.dma-controller` without timeouts, i2c-N for 994000.i2c, `gts7xl-modules: loaded stmfts1b` in
 dmesg after telnetd, `stmfts1b … fw 0x…`, touch on buffyboard. kexec/usbsh not yet tried on the tablet.
+
+## 2026-11-17T12:07:49+07:00 flash
+- RECOVERY: bda4530a7464240c535216812e91e0b52fd443ce10eee791ccd0bfcf3f246ddb build/recovery-shim.img
+
+## 2026-11-17 r10 (recovery-shim.img sha256 bda4530a…) — TOUCH WORKS
+- GPI DMA fixed with `qcom,gpi-ee-offset = <0x1000>` (stock firmware EE); i2c5 probes, stmfts1b module loads at 4.7 s:
+  FTS1BA90A fw 0x0113, 1751x2799, 53x33 channels; buffyboard restarted; typing by finger on the on-screen
+  keyboard works with the correct orientation. Display, USB, UFS unchanged. kexec + module push tooling in place
+  (docs/runbooks/iterate-over-usb.md), not yet exercised on the device.
