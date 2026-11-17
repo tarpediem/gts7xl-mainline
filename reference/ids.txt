@@ -1,0 +1,10 @@
+stock-base-00.dts: qcom,msm-id = <0x164 0x20001> qcom,board-id = <0x00 0x00> 
+stock-base-01.dts: qcom,msm-id = <0x164 0x20000> qcom,board-id = <0x00 0x00> 
+stock-base-02.dts: qcom,msm-id = <0x164 0x10000> qcom,board-id = <0x00 0x00> 
+stock-overlay-00-id0-rev0.dts: qcom,board-id = <0x08 0x01> 
+stock-overlay-01-id0-rev0.dts: qcom,board-id = <0x08 0x05> 
+stock-overlay-02-id0-rev0.dts: qcom,board-id = <0x08 0x00> 
+stock-overlay-03-id0-rev0.dts: qcom,board-id = <0x08 0x04> 
+stock-overlay-04-id0-rev0.dts: qcom,board-id = <0x08 0x06> 
+stock-overlay-05-id0-rev0.dts: qcom,board-id = <0x08 0x03> 
+stock-overlay-06-id0-rev0.dts: qcom,board-id = <0x08 0x02> 
