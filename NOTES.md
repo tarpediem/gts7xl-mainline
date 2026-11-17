@@ -422,3 +422,16 @@ i2c0, gpi_dma0 and the QUP wrapper are identical to r6 in the compiled DTB. `pma
 
 If r8 still fails like r7: next bisect step is r8 without the L13A/L14A regulator nodes and touch node (i2c5 only).
 If SE5 is in GSI-only mode, i2c5 now fails to probe (no touch) instead of needing GPI.
+
+## 2026-11-17T11:32:18+07:00 flash
+- RECOVERY: 780166d92efd1baa0ba20e23733d737656345764792966e2b985f9075ae7aa7a build/stock/recovery.img
+
+## 2026-11-17 r7 (touch) boot loop — lesson
+- r7 looped panic→reboot into RECOVERY. pstore (build/r7crash/, gitignored) shows
+  `vreg_l13a_3p3: unsupported voltage constraints 3304000-3296000uV` → the whole PM8150 RPMh regulator
+  device failed → no L5A/L9A → no DSI, no USB, UFS starved. Cause: stock value 3300000 µV is off the
+  mainline pldo grid (1504000 + n×8000). Downstream rounds silently, mainline refuses.
+- RULE: snap every downstream regulator voltage to the mainline grid before flashing (grid-check test in tests/).
+- RULE: archive every flashed image in build/archive/ before rebuilding.
+- Escape a RECOVERY boot loop: Vol Down + Power, at black screen switch at once to Vol Up + Vol Down → Download Mode,
+  then reflash build/stock/recovery.img. Recovered with stock recovery (sha256 780166d9…), One UI boots.
