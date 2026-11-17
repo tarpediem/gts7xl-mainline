@@ -1,5 +1,22 @@
 # Morning report — 2026-11-18
 
+## Read first (coordinator)
+
+- **Module cleanup masked.** Omarchy's `linux-modules-cleanup.service` deleted the module folders of
+  the BOOT (r20) and RECOVERY (r15) kernels after kexec tests overnight (no Wi-Fi/BT/audio on r20
+  until they were restored). It is now masked on the tablet and in `arch/gts7xl-device/install.sh`;
+  all module folders (7.3.4, r20, r21, r50) are present. Keep it masked: our kernels' module dirs are
+  not all pacman-owned.
+- **sudo without password** for `tarpediem` on the tablet (`/etc/sudoers.d/90-tarpediem-nopasswd`);
+  the agents' helper that piped the Wi-Fi password into sudo is deleted.
+- **Host PC:** 44 stale pmbootstrap chroot mounts are visible in the build PC's mount namespace. Do not
+  run `pmbootstrap shutdown`/`zap` or unmount them by hand; they go away at the next reboot of the PC.
+  Every pmbootstrap command must run under `sudo unshare --mount --propagation private`.
+- **Static DHCP lease** on the OPNsense: the tablet has a fixed LAN address (see the private notes). USB: 172.16.42.1, the PC
+  has a NetworkManager profile `gts7xl-usb` (172.16.42.2/24).
+- **Drafts waiting for you:** XDA thread (`docs/xda/thread-draft.md`), upstream kernel series
+  (`docs/upstream/`, patches in `build/upstream-series/`, Signed-off-by placeholder: your identity).
+
 ## State of the tablet
 
 - Running: Omarchy 4.5 (Arch Linux ARM) on USERDATA, **BOOT r20** (kernel 7.3.4-r20), RECOVERY r15.
