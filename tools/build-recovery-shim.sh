@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the RECOVERY candidates that carry the boot shim, from a pmbootstrap export.
+# Build the RECOVERY and BOOT images that carry the boot shim, from a pmbootstrap export.
 #
 #   tools/build-recovery-shim.sh [BUILD_DIR]        (default: build/)
 #
@@ -8,6 +8,8 @@
 # Writes: shim-Image, boot-xz.img and boot-signed.img (intermediates, never flashed), and
 #   recovery-shim.img         stock vbmeta blob kept, Samsung trailer -> flash with --keep-vbmeta (attempt A)
 #   recovery-shim-signed.img  test-key AVB footer     -> flash with the disabled vbmeta (attempt B)
+#   boot-shim.img             same kernel slot, ramdisk and cmdline, stock boot dtb, stock boot vbmeta
+#                             blob moved after the image like magiskboot does -> flash with --keep-vbmeta
 # Offline: nothing here talks to the tablet.
 set -euo pipefail
 
@@ -31,5 +33,10 @@ python3 "$tools/mkrecovery.py" --stock-recovery "$build/stock/recovery.img" --st
     --kernel "$build/shim-Image" --stock-footer "$build/boot-signed.img" "$build/recovery-shim.img"
 python3 "$tools/mkrecovery.py" --stock-recovery "$build/stock/recovery.img" --stock-dt \
     --kernel "$build/shim-Image" "$build/boot-signed.img" "$build/recovery-shim-signed.img"
+# BOOT: a normal power-on starts Linux (tools/mkboot.py). Too big for the stock vbmeta offset
+# (BOOT is ~16 MB smaller than RECOVERY), so the blob moves, as on the Magisk BOOT.
+python3 "$tools/mkboot.py" --stock-boot "$build/stock/boot-stock.img" --kernel "$build/shim-Image" \
+    --relocate-vbmeta "$build/boot-signed.img" "$build/boot-shim.img"
 
-(cd "$build" && sha256sum shim-Image recovery-shim.img recovery-shim-signed.img dtbs/sm8250-samsung-gts7xl.dtb)
+(cd "$build" && sha256sum shim-Image recovery-shim.img recovery-shim-signed.img boot-shim.img \
+    dtbs/sm8250-samsung-gts7xl.dtb)

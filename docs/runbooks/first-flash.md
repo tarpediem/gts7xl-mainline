@@ -322,7 +322,8 @@ If `flash.sh` reports `FAIL! Auth` / an upload error right after a blocked boot:
 Download session opened by the bootloader after a block is not trustworthy. Hold
 Vol Down + Power 7 s, let One UI boot, enter Download Mode by hand again, retry.
 
-If One UI no longer boots (should not happen: BOOT and DTBO are never written):
+If One UI no longer boots (should not happen in this runbook: BOOT and DTBO are never written
+here; once BOOT holds Linux, follow `rootfs-on-userdata.md` section 8 instead):
 
 ```sh
 tools/flash.sh --pit build/gts7xl.pit --allow-dtbo --vbmeta build/stock/vbmeta.img \

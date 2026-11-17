@@ -794,3 +794,46 @@ KEY_KPASTERISK, but its uinput device does not declare those keys, so the kernel
 - result: OK, 1463812096 bytes written, read back sha256 matches
 - 2026-11-17 kexec boot into the rootfs on userdata (cmdline of build/boot.img, no debug shell): systemd
   "running" with no failed units, root /dev/loop0p2 auto-grown to 219.7G, SSH key login over USB OK.
+
+## 2026-11-17 — r15 BOOT image: Linux on a normal power-on (built, not flashed)
+
+Owner decision: BOOT (One UI's normal boot) gets our Linux too, so a normal power-on or
+off-mode charging starts postmarketOS and Android's `fs_mgr` can never format userdata.
+One UI data is already gone. DTBO and vbmeta stay stock.
+
+`tools/mkboot.py` (called by `tools/build-recovery-shim.sh` after the RECOVERY images):
+header v2 fields of the stock boot.img, kernel slot = `build/shim-Image`, ramdisk and cmdline of
+`build/boot-signed.img` (the same xz initramfs and UUIDs as RECOVERY r15, no debug shell), dtb =
+the stock boot.img's dtb byte for byte, no recovery_dtbo (the ABL applies the DTBO partition on a
+normal boot). Image + `SEANDROIDENFORCE` + stock boot vbmeta blob + stock footer with
+original_image_size and vbmeta_offset updated.
+
+Size: 68198416 bytes with the trailer in a 71303168-byte partition, but past the stock vbmeta
+offset (56000512) and the stock hashed size (55996944) by 12201472 bytes. Shrinking was measured
+and rejected: the initramfs would have to be under ~2.9 MB xz; with every module and firmware
+file removed it is still 8.75 MB (systemd-udev, cryptsetup/libcrypto, btrfs/xfs tools,
+buffyboard). So the blob moves to the first 4096 boundary after the image (68202496),
+`--relocate-vbmeta`, which is what magiskboot did to the Magisk BOOT on this tablet (blob at
+56143872, footer differs from stock only in original_image_size and vbmeta_offset, its dtb
+ends 142832 bytes past the hashed size and the tablet boots it). Upstream libavb
+`load_and_verify_hash_partition` loads the whole partition when verification errors are allowed
+(unlocked), not the hashed size. RECOVERY is unchanged (r15 rebuilt bit for bit, it still fits
+under its stock hashed size).
+
+Checked offline on `boot-shim.img`: header differs from the stock boot only in kernel_size and
+ramdisk_size; dtb == stock boot dtb; kernel == shim-Image; ramdisk == RECOVERY r15's; cmdline
+== RECOVERY r15's; one trailer; zero padding; blob == stock blob; avbtool info_image reads it.
+Tests: 182 passed (with unicorn: the shim emulation runs), `test_flash.sh` OK. The running rootfs
+(read-only check over SSH) uses the same `pmos_boot_uuid`/`pmos_root_uuid`.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/archive/boot-shim-r15-eba2068f.img` (BOOT, 71303168 bytes) | `eba2068f68d3359b` |
+| `build/archive/recovery-shim-r15-59538de5.img` (RECOVERY, unchanged) | `59538de5022a9d1d` |
+
+    tools/flash.sh --keep-vbmeta --pit build/gts7xl.pit \
+        RECOVERY=build/archive/recovery-shim-r15-59538de5.img BOOT=build/archive/boot-shim-r15-eba2068f.img
+
+Dry run: `heimdall flash --RECOVERY …/recovery-shim-r15-59538de5.img --BOOT …/boot-shim-r15-eba2068f.img --no-reboot`.
+Way back to One UI: `rootfs-on-userdata.md` section 8 (stock boot + stock recovery, then wipe data
+from the stock recovery before any normal boot).

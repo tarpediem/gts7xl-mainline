@@ -1,5 +1,7 @@
 # Root filesystem on USERDATA — gts7xl (SM-T976B)
 
+> From r15 on, BOOT holds Linux too (section 4): a normal power-on boots postmarketOS.
+
 Goal: boot past the initramfs debug shell into a real postmarketOS root filesystem on the
 tablet's UFS, in the **USERDATA** partition. **This erases One UI's data** (photos, apps,
 accounts). EFS and the modem partitions are not touched (and are backed up). The owner
@@ -63,12 +65,14 @@ pkill -CONT -f '^/usr/bin/python /usr/bin/udiskie'
 pmbootstrap export build/
 cp --sparse=always build/samsung-gts7xl.img build/rootfs-rNN.img   # raw, not Android sparse
 sha256sum build/rootfs-rNN.img
-tools/build-recovery-shim.sh            # RECOVERY with the same UUIDs on its cmdline
+tools/build-recovery-shim.sh            # RECOVERY and BOOT with the same UUIDs on their cmdline
 ```
 
 `build/samsung-gts7xl.img` is a symlink into the pmbootstrap chroot: a later `zap` or
 `install` replaces it, hence the copy. Check the pair: the `pmos_root_uuid` printed by
 `build-recovery-shim.sh` must be the ext4 UUID of the image's second partition.
+Archive the two flashable outputs under their sha256 prefix:
+`build/archive/recovery-shim-rNN-<sha8>.img` and `build/archive/boot-shim-rNN-<sha8>.img`.
 
 ## 2. Write USERDATA (debug shell, over USB)
 
@@ -124,22 +128,57 @@ If it does not come up: wait for the USB link; a failed root mount drops into th
 shell (telnet works again). `oops=panic panic=5` turns a crash into a reboot into
 RECOVERY (still the debug-shell image).
 
-## 4. Flash the matching RECOVERY
+## 4. Flash the matching RECOVERY and BOOT
 
-Once the kexec boot works, make it the real boot. Download Mode (Vol Down + Vol Up, then
-USB), then:
+Once the kexec boot works, make it the real boot. RECOVERY and BOOT are written together, in
+one heimdall command, both with the same kernel slot (boot shim), initramfs and command line:
+
+| Partition | Image (r15) | sha256 |
+|---|---|---|
+| RECOVERY | `build/archive/recovery-shim-r15-59538de5.img` | `59538de5022a9d1dfcd0c201de334266d42dcf5cc11d5e42d969f3f15dc6c505` |
+| BOOT | `build/archive/boot-shim-r15-eba2068f.img` | `eba2068f68d3359be75544008c0322fd81bae276fa512b245479ebea6ea94535` |
+
+Download Mode (Vol Down + Vol Up, then USB), then:
 
 ```sh
-tools/flash.sh --dry-run --keep-vbmeta --pit build/gts7xl.pit RECOVERY=build/archive/recovery-shim-r15-<sha8>.img
-tools/flash.sh --keep-vbmeta --pit build/gts7xl.pit RECOVERY=build/archive/recovery-shim-r15-<sha8>.img
+tools/flash.sh --dry-run --keep-vbmeta --pit build/gts7xl.pit \
+    RECOVERY=build/archive/recovery-shim-r15-59538de5.img BOOT=build/archive/boot-shim-r15-eba2068f.img
+tools/flash.sh --keep-vbmeta --pit build/gts7xl.pit \
+    RECOVERY=build/archive/recovery-shim-r15-59538de5.img BOOT=build/archive/boot-shim-r15-eba2068f.img
 ```
 
-Boot with **Vol Up + Power**, release both when the Samsung logo shows.
+The dry run must print exactly one command,
+`heimdall flash --RECOVERY <recovery> --BOOT <boot> --no-reboot` (no VBMETA, DTBO or USERDATA).
 
-**Do not boot normally (Power alone) once userdata holds pmOS.** BOOT still has One UI;
-Android's `fs_mgr` formats a `formattable` userdata that it sees as wiped (no ext4/f2fs
-superblock where it looks), which would erase pmOS. Off-mode charging also starts from BOOT.
-Until BOOT is dealt with, start the tablet only into RECOVERY.
+**A normal power-on (Power alone) now boots Linux**, and so does off-mode charging (plugging
+the charger into a powered-off tablet starts BOOT: Linux comes up instead of the charging
+animation). One UI is gone from the tablet; Android's `fs_mgr` no longer runs, so nothing
+formats userdata behind our back. Vol Up + Power still boots RECOVERY (same Linux).
+
+How the BOOT image is made (`tools/mkboot.py`, called by `build-recovery-shim.sh`):
+
+- header v2 fields of the stock `boot.img` (addresses, OS version, board name), the pmOS
+  command line and the same xz initramfs as RECOVERY r15;
+- kernel slot = the boot shim (`build/shim-Image`); dtb = the stock **boot.img**'s dtb byte
+  for byte; no recovery_dtbo section. On a normal boot the ABL applies the overlays of the
+  DTBO partition (left stock) to that dtb; the shim only takes `/memory`, the command line
+  and the ramdisk location from it;
+- AVB as on the Magisk BOOT that already boots on this tablet: `SEANDROIDENFORCE` after the
+  last section, footer `original_image_size` = end of that trailer, stock vbmeta blob byte
+  for byte; the stock vbmeta partition stays as it is (`--keep-vbmeta`);
+- size: BOOT (71303168 bytes) is ~16 MB smaller than RECOVERY. Kernel slot 51.4 MB +
+  initramfs 15.2 MB + dtb 1.6 MB = 68198416 bytes with the trailer: past the stock vbmeta
+  blob offset (56000512) and the stock hashed size (55996944). So the blob moves to the first
+  4096-byte boundary after the image (68202496), exactly as magiskboot does (the Magisk BOOT
+  has it at 56143872, and its dtb ends 142832 bytes past the stock hashed size). With an
+  unlocked bootloader libavb loads the whole partition, not just the hashed size
+  (`avb_slot_verify.c`: "Loading entire partition" when verification errors are allowed).
+  Fitting under the hashed size instead would need the initramfs under ~2.9 MB (it is
+  8.7 MB with no module and no firmware at all): not done.
+
+If BOOT does not start Linux (blocked, bootloop, black screen): Vol Down + Power 7 s, then
+Vol Up + Power for RECOVERY (still Linux), or Download Mode and flash `build/stock/boot-magisk.img`
+back to BOOT. Do **not** let One UI boot while pmOS is on userdata (see 8).
 
 ## 5. Back to the debug shell
 
@@ -184,8 +223,12 @@ interface.
 
 ## 8. Restore One UI
 
-1. Download Mode, flash the stock recovery:
-   `tools/flash.sh --keep-vbmeta --pit build/gts7xl.pit RECOVERY=build/stock/recovery.img`
-2. Boot it (Vol Up + Power), choose **Wipe data/factory reset**: it formats userdata.
-3. Reboot: One UI starts from BOOT (still the Magisk-patched stock boot) as a fresh device.
+BOOT and RECOVERY both hold Linux, userdata holds pmOS. One UI needs all three back:
+
+1. Download Mode, flash the stock boot and the stock recovery in one command:
+   `tools/flash.sh --keep-vbmeta --pit build/gts7xl.pit BOOT=build/stock/boot-stock.img RECOVERY=build/stock/recovery.img`
+   (`BOOT=build/stock/boot-magisk.img` instead to keep root).
+2. Boot RECOVERY right away (Vol Up + Power), **before any normal boot**, and choose
+   **Wipe data/factory reset**: it formats userdata.
+3. Reboot: One UI starts from BOOT as a fresh device.
    The full stock firmware (Odin/heimdall) restores everything else if needed.
