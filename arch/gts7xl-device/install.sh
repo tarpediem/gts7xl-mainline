@@ -50,6 +50,10 @@ chroot "$R" systemd-hwdb update
 ln -sfn /usr/share/zoneinfo/Asia/Bangkok "$R/etc/localtime"
 chroot "$R" systemctl enable systemd-timesyncd.service >/dev/null 2>&1 || true
 chroot "$R" systemctl enable gts7xl-bt-addr.service gts7xl-powerkey.service gts7xl-firstboot.service >/dev/null
+# kernel-modules-hook's linux-modules-cleanup.service deletes every /usr/lib/modules/<rel>
+# not owned by a package and not the running kernel, at each boot: it wiped the BOOT (r20) and
+# RECOVERY (7.3.4) module dirs kept outside pacman on 2026-11-17 (no Wi-Fi/audio after reboot).
+ln -sfn /dev/null "$R/etc/systemd/system/linux-modules-cleanup.service"
 # zram is built in (CONFIG_ZRAM=y): Omarchy's zram-generator config applies.
 chroot "$R" systemctl unmask systemd-zram-setup@zram0.service >/dev/null 2>&1 || true
 # Hyprland overrides (Omarchy 4.5 uses a Lua config): ~/.config/hypr/gts7xl.lua, required last.
