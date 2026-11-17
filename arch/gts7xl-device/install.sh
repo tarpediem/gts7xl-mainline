@@ -15,6 +15,8 @@ printf '\n[Install]\nWantedBy=multi-user.target\n' >> "$R/usr/lib/systemd/system
 inst 755 gts7xl-hypr-dpms usr/bin/gts7xl-hypr-dpms
 inst 755 gts7xl-volume usr/bin/gts7xl-volume
 inst 755 gts7xl-session-dpms usr/lib/gts7xl/gts7xl-session-dpms
+inst 755 gts7xl-gnome-setup usr/bin/gts7xl-gnome-setup
+[ -d "$R/usr/lib/firefox" ] && inst 644 firefox-gts7xl.js usr/lib/firefox/browser/defaults/preferences/gts7xl.js
 inst 644 60-gts7xl-speaker-protection.conf usr/share/pipewire/pipewire.conf.d/60-gts7xl-speaker-protection.conf
 inst 755 gts7xl-firstboot usr/lib/gts7xl/gts7xl-firstboot
 inst 644 gts7xl-firstboot.service usr/lib/systemd/system/gts7xl-firstboot.service
@@ -33,7 +35,7 @@ inst 644 sshd-keyonly.conf etc/ssh/sshd_config.d/40-gts7xl-keyonly.conf
 inst 644 gts7xl-console.sysctl usr/lib/sysctl.d/60-gts7xl-console.conf
 inst 644 logind-powerkey.conf etc/systemd/logind.conf.d/40-gts7xl-powerkey.conf
 inst 644 logind-lid.conf etc/systemd/logind.conf.d/40-gts7xl-lid.conf
-inst 644 81-gts7xl-sensors.rules etc/udev/rules.d/81-gts7xl-sensors.rules
+inst 644 79-gts7xl-sensors.rules etc/udev/rules.d/79-gts7xl-sensors.rules
 inst 644 kmscon.conf etc/kmscon/kmscon.conf
 # kmscon on the text VTs (tty2+, logind autovt); SDDM/Hyprland keep tty1.
 ln -sfn /usr/lib/systemd/system/kmsconvt@.service "$R/etc/systemd/system/autovt@.service"
@@ -48,8 +50,8 @@ chroot "$R" systemd-hwdb update
 ln -sfn /usr/share/zoneinfo/Asia/Bangkok "$R/etc/localtime"
 chroot "$R" systemctl enable systemd-timesyncd.service >/dev/null 2>&1 || true
 chroot "$R" systemctl enable gts7xl-bt-addr.service gts7xl-powerkey.service gts7xl-firstboot.service >/dev/null
-# No zram module in our kernel.
-chroot "$R" systemctl mask systemd-zram-setup@zram0.service >/dev/null 2>&1 || true
+# zram is built in (CONFIG_ZRAM=y): Omarchy's zram-generator config applies.
+chroot "$R" systemctl unmask systemd-zram-setup@zram0.service >/dev/null 2>&1 || true
 # Hyprland overrides (Omarchy 4.5 uses a Lua config): ~/.config/hypr/gts7xl.lua, required last.
 h=$R/home/$U/.config/hypr
 install -D -m644 "$f/hypr-gts7xl.lua" "$h/gts7xl.lua"
@@ -68,5 +70,8 @@ if [ -d "$R/usr/share/gnome-shell" ]; then
 	# Omarchy starts fcitx5 as a user unit: not under GNOME (it takes over GNOME's own OSK input).
 	d=$R/home/$U/.config/systemd/user/omarchy-fcitx5.service.d; mkdir -p "$d"
 	printf '[Service]\nExecCondition=/bin/sh -c '"'"'case "$XDG_CURRENT_DESKTOP" in *GNOME*) exit 1;; esac'"'"'\n' > "$d/gts7xl-not-gnome.conf"
+	# First GNOME login: apply the touch/dock settings once (extensions must be installed first:
+	# see arch/gts7xl-device/gnome-extensions.txt).
+	printf '[Desktop Entry]\nType=Application\nName=gts7xl GNOME setup\nOnlyShowIn=GNOME;\nNoDisplay=true\nExec=sh -c "test -e $HOME/.config/gts7xl-gnome-setup.done || { gts7xl-gnome-setup && touch $HOME/.config/gts7xl-gnome-setup.done; }"\n' > "$a/gts7xl-gnome-setup.desktop"
 	chroot "$R" chown -R "$U:$U" "/home/$U/.config/autostart" "/home/$U/.config/systemd"
 fi

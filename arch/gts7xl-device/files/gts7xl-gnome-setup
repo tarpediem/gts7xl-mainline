@@ -33,4 +33,38 @@ gx $J $S panel-size 48
 gx $J $S panel-button-padding-size 12
 gx $J $S panel-indicator-padding-size 8
 gx $J $S startup-status 0
+
+# Screen blank after 5 min, never suspend on idle (s2idle untested on this board).
+g org.gnome.desktop.session idle-delay 'uint32 300'
+g org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing'
+g org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'
+g org.gnome.settings-daemon.plugins.power idle-dim true
+# App grid: Omarchy's apps grouped into folders instead of filling the grid.
+folder() { id=$1; name=$2; shift 2
+	p=/org/gnome/desktop/app-folders/folders/$id/
+	gsettings set org.gnome.desktop.app-folders.folder:$p name "$name"
+	apps=$(printf "'%s', " "$@"); gsettings set org.gnome.desktop.app-folders.folder:$p apps "[${apps%, }]"
+}
+folder Omarchy 'Omarchy' Basecamp.desktop HEY.desktop 'Google Contacts.desktop' 'Google Maps.desktop' \
+	'Google Messages.desktop' 'Google Photos.desktop' WhatsApp.desktop X.desktop YouTube.desktop Zoom.desktop \
+	Discord.desktop omarchy-browser.desktop aether.desktop hype.desktop gliff.desktop omacalc.desktop omacut.desktop \
+	omasnap.desktop omawrite.desktop signed.desktop monologue.desktop disktree.desktop obsidian.desktop
+folder Terminal 'Terminal tools' btop.desktop nvim.desktop vim.desktop foot.desktop foot-server.desktop \
+	footclient.desktop uuctl.desktop
+folder Office 'Office' libreoffice-startcenter.desktop libreoffice-writer.desktop libreoffice-calc.desktop \
+	libreoffice-impress.desktop libreoffice-draw.desktop libreoffice-math.desktop libreoffice-base.desktop \
+	com.github.PintaProject.Pinta.desktop
+folder System 'System' cups.desktop system-config-printer.desktop fcitx5-configtool.desktop \
+	org.freedesktop.IBus.Setup.desktop org.gnome.ColorProfileViewer.desktop org.gnome.DiskUtility.desktop \
+	qv4l2.desktop qvidcap.desktop com.moonlight_stream.Moonlight.desktop localsend.desktop \
+	com.mattjakeman.ExtensionManager.desktop org.gnome.tweaks.desktop
+g org.gnome.desktop.app-folders folder-children "['Omarchy', 'Terminal', 'Office', 'System']"
 echo ok
+# Wallpaper (if installed by the image build into ~/Pictures/Wallpapers).
+w=$HOME/Pictures/Wallpapers/rebutos-phoenix-2800x1752.jpg
+if [ -f "$w" ]; then
+	g org.gnome.desktop.background picture-uri "file://$w"
+	g org.gnome.desktop.background picture-uri-dark "file://$w"
+	g org.gnome.desktop.background picture-options 'zoom'
+	g org.gnome.desktop.screensaver picture-uri "file://$w"
+fi
