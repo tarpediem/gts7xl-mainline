@@ -1555,3 +1555,69 @@ feasible on mainline. Grip/SAR: A96T3X6 x2 on GPIO-bitbanged I2C (not needed).
 Sources: linux `gts7xl-sensors` 9bdfaddc0 (SLPI + hall), 0a3ecd58b (rear camera DTB), a23fbc2da
 (wacom_w90xx), 28ecdbb12 (S Pen DT); pmaports `gts7xl-sensors` a9cfc19e1 (on r21: patches
 0033-0036, S5K3M5=m, TOUCHSCREEN_WACOM_W90XX=m, pkgrel left to the integration).
+
+## 2026-11-17/18 night — audio: crackle measurements, TDM loopback, speaker protection prepared (no flash)
+
+Owner feedback on Omarchy (BOOT r20): slight crackle; bass saturating at high volume before the
+"Speakers (protected)" filter (Android: Cirrus protection + Dolby). Everything below was done
+without audible sound (muted amps or -60 dBFS), under the tablet lock.
+
+Crackle, measured:
+- PipeWire on r20: device node `alsa_output.platform-sound.HiFi__Speaker__sink` S16LE 48 kHz,
+  quantum 1024, ALSA period 480 / buffer 3840 (MMAP, batch). pw-top device ERR 0 over every run,
+  also with 8 busy CPU loops; one client (pw-play) showed ERR 8 once under that synthetic load, 0
+  in three repeats (latency 1024/2048/4096). Daemons run SCHED_RR 20 (rtkit), kernel PREEMPT, HZ 250.
+- Amp settings read back (regmap): HW noise gate off (NG_CFG 0x33, select 0), DSP noise gates
+  off, DRE off, soft ramp off, gain ZC off, analog gain 6 (0xc0), digital 0 dB, class-H boost
+  (VCTRL2 0x1), boost coefficients = stock.
+- **TDM bus bit-exact** (test kernel r41, branch `gts7xl-audio-sense`: Primary TDM TX capture link):
+  silent loopback (all amps Digital PCM Volume 0 = mute, analog minimum, "ASP TX1 Source" =
+  ASPRX1, ASP TX2-4 = Zero, full-scale random noise on MultiMedia1, capture MultiMedia3):
+  NB_NF (r20 setting): Top Right slot 100.000 % identical over 198000 frames; Top Left slot
+  identical except its MSB, always 0 (first bit of the frame on the amp's transmit side; a wrong
+  received MSB would be gross distortion, not heard). IB_NF (stock-like codec edge, via the debug
+  parameter `snd_soc_sm8250.pri_tdm_codec_ib=1`): every bit wrong. So the r20 edge is right and
+  the playback data reaches the amps intact. Tools: `tools/tdm-loopback-test.sh`,
+  `tools/tdm-loopback-compare.py`. Note: a first run without ASP TX2-4 = Zero had several amps
+  driving the same TX slots for ~9 s (default slot layout); the capture link must stay out of the
+  main line until UCM/driver set those sources.
+- Not found yet: device xruns, bus errors, gating. Remaining suspects (need sound, owner present):
+  speaker over-excursion at high level (no protection), class-H/boost transitions, content.
+  Next step: IMON/VMON capture during quiet music (ASP TX1/2 = IMON/VMON on the sense link) to
+  see current clipping or boost dips.
+
+Speaker protection (Samsung CSPL), prepared and checked silently:
+- Firmware: vendor `/firmware/cs35l40-spk-dsp1-spk-prot.wmfw` (CSPL, Jan 2020, algorithms 0xcd
+  "CSPL" and 0x400a4 "VIMON") + `cs35l40-spk-dsp1-spk-prot.bin` (TAB_S7P_SPKPV2_PPP_20200602,
+  coefficients only). Mainline wm_adsp loads them as `cirrus/cs35l41-dsp1-spk-prot.wmfw/.bin`
+  (generic name, no subsystem id needed): "DSP1: Firmware: 400a4 vendor: 0x2 v0.0.1",
+  "Protection: C:\SPbin\TAB_S7P_SPKPV2_PPP_20200602.bin". Installed on the tablet only (Samsung
+  files, never in git). Controls per amp: "<Amp> DSP1 Protection cd CAL_R/CAL_AMBIENT/CAL_STATUS/
+  CAL_CHECKSUM/CAL_SET_STATUS/CSPL_STATE/...", "... 400a4 VIMON_CAL/VSC/ISC/HALO_STATE".
+- Factory calibration: sec_efs `/cirrus/{rdc,vsc,isc}_cal<suffix>` + `temp_cal` (read only from
+  the EFS backup and, on the tablet, from /dev/disk/by-partlabel/sec_efs with debugfs; values stay
+  on the device). Suffix map (stock cirrus,mfd-suffix): "" 0x41 Top Left, "_r" 0x40 Bottom Left,
+  "_b" 0x43 Top Right, "_br" 0x42 Bottom Right. RDC values ~6.5 ohm each, VIMON present.
+  `tools/gts7xl-amp-cal.sh` writes them like the stock cirrus_cal_apply (CAL_R, CAL_AMBIENT,
+  CAL_STATUS 1, CAL_CHECKSUM R+1, VIMON_CAL 2 + VSC/ISC); the controls are volatile, so it must
+  run while the DSP runs.
+- Silent run on r20 (amps muted, digital silence, 14 s): firmware on all four, PCM Source DSP,
+  calibration written: HALO_STATE 2, CSPL_ENABLE 1, CAL_SET_STATUS 1, VIMON_CAL 2 read back on
+  the amps that answered; cs35l41 interrupts 0. At stop, mainline's mailbox PAUSE failed on two
+  amps ("Failed to set mailbox cmd 1 (status 0)", PRE_PMD -42): this 2020 firmware does not answer
+  the mailbox protocol the driver expects; the amps went back to ASP/no firmware normally. Some
+  reads came back empty (control read during state changes).
+- Not enabled. Open before using it: mailbox mismatch (pause/resume), when the calibration must
+  be written (vendor: right after firmware start; userspace can only do it once running), whether
+  CSPL actually limits (CSPL_STATE 0 in that run), then a listening test with the owner at low
+  level with protection on, read CSPL_TEMPERATURE/REDUCE_POWER while playing.
+
+Mics / USB-C headset (investigated only):
+- Mics: stock DMICs on the LPASS VA macro, LPI gpio6/7 (DMIC0/1, `dmic01_active` in sm8250.dtsi)
+  and gpio8/9 (DMIC2/3), 600 kHz (va-dmic-sample-rate 0x927c0), stock routing "VA DMIC0..3".
+  Mainline precedent: qrb5165-rb5 (`&vamacro` + "VA Capture" link VA_CODEC_DMA_TX_0). Needs: enable
+  vamacro (vdd-micb supply from the stock tree), dmic23 pin state, capture link + UCM.
+- USB-C headset: stock has `audio,no-earjack` and the MAX77705 MUIC "detect-alalog-audio"; the
+  WCD938x is disabled in the stock tree. Digital USB-C dongles need USB host mode (see
+  docs/usb-dual-role-design.md) and then work with snd-usb-audio; analog accessory mode is not
+  wired to a codec here.
