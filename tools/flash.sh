@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Flash images to the Tab S7+ 5G with one Heimdall command (Download Mode).
 #
-# usage: flash.sh [--dry-run] [--pit FILE] [--keep-vbmeta] [--resume]
+# usage: flash.sh [--dry-run] [--pit FILE] [--keep-vbmeta | --vbmeta FILE] [--resume]
 #                 [--allow-dtbo] [--allow-userdata] PART=IMAGE ...
 #
 #   PART              one of BOOT RECOVERY DTBO USERDATA (VBMETA is added by the script).
@@ -10,6 +10,7 @@
 #                     (the name is passed to heimdall in the PIT's own letter case) and every
 #                     image must fit (block count x FLASH_BLOCK_SIZE). Required for a real run.
 #   --keep-vbmeta     do not add tools/images/vbmeta-disabled.img (the device keeps its vbmeta).
+#   --vbmeta FILE     write FILE to VBMETA instead (e.g. the stock vbmeta.img, to roll back).
 #   --resume          pass --resume to heimdall (session left open by a --no-reboot action).
 #   --allow-dtbo      DTBO is refused without it: a non-stock DTBO stops One UI from booting.
 #   --allow-userdata  USERDATA is refused without it: it erases One UI's data.
@@ -26,13 +27,14 @@ ALLOWED=" BOOT DTBO VBMETA RECOVERY USERDATA "
 die() { echo "$*" >&2; exit 1; }
 usage() { sed -n '4,5p' "$0" | sed 's/^# //' >&2; exit 2; }
 
-dry=0; pit=""; keep_vbmeta=0; resume=0; allow_dtbo=0; allow_userdata=0
+dry=0; pit=""; vbmeta=""; keep_vbmeta=0; resume=0; allow_dtbo=0; allow_userdata=0
 parts=(); imgs=()
 while [ $# -gt 0 ]; do
   case $1 in
     --dry-run) dry=1 ;;
     --pit) [ $# -ge 2 ] || usage; pit=$2; shift ;;
     --keep-vbmeta) keep_vbmeta=1 ;;
+    --vbmeta) [ $# -ge 2 ] || usage; vbmeta=$2; shift ;;
     --resume) resume=1 ;;
     --allow-dtbo) allow_dtbo=1 ;;
     --allow-userdata) allow_userdata=1 ;;
@@ -58,6 +60,11 @@ for kv in "$@"; do
   [ -f "$img" ] || die "missing image: $img"
   parts+=("$part"); imgs+=("$(realpath -- "$img")")
 done
+if [ -n "$vbmeta" ]; then
+  [ $keep_vbmeta = 0 ] || die "--vbmeta and --keep-vbmeta exclude each other"
+  [ -f "$vbmeta" ] || die "missing image: $vbmeta"
+  vbmeta=$(realpath -- "$vbmeta")
+fi
 if [ -n "$pit" ]; then
   [ -f "$pit" ] || die "missing PIT file: $pit"
   pit=$(realpath -- "$pit")
@@ -69,7 +76,7 @@ cd "$(dirname "$0")/.."
 root=$(pwd -P)
 notes=${notes:-$root/NOTES.md}
 if [ $keep_vbmeta = 0 ]; then
-  vbmeta=$root/tools/images/vbmeta-disabled.img
+  vbmeta=${vbmeta:-$root/tools/images/vbmeta-disabled.img}
   [ -f "$vbmeta" ] || die "missing image: $vbmeta (build it first)"
   parts+=(VBMETA); imgs+=("$vbmeta")
 fi

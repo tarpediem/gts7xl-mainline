@@ -84,6 +84,12 @@ out=$("$flash" --dry-run --allow-dtbo DTBO="$t/dtbo.img") && [[ $out == *"--DTBO
 out=$("$flash" --dry-run --keep-vbmeta --resume RECOVERY="$t/boot.img")
 [[ $out == *"--RECOVERY $t/boot.img"* && $out != *VBMETA* && $out == *"--resume"* ]] || { echo "FAIL keep-vbmeta: $out"; fail=1; }
 
+# --- --vbmeta FILE replaces the default vbmeta image (rollback to the stock vbmeta)
+out=$("$flash" --dry-run --vbmeta "$t/dtbo.img" RECOVERY="$t/boot.img")
+[[ $out == *"--VBMETA $t/dtbo.img"* && $out != *"$vb"* ]] || { echo "FAIL --vbmeta: $out"; fail=1; }
+"$flash" --dry-run --vbmeta "$t/missing.img" RECOVERY="$t/boot.img" >/dev/null 2>&1 && { echo "FAIL: missing --vbmeta file accepted"; fail=1; }
+"$flash" --dry-run --vbmeta "$t/dtbo.img" --keep-vbmeta RECOVERY="$t/boot.img" >/dev/null 2>&1 && { echo "FAIL: --vbmeta with --keep-vbmeta accepted"; fail=1; }
+
 # --- PIT: names checked, case taken from the PIT, sizes checked (blocks x 4096)
 out=$("$flash" --dry-run --pit "$lpit" RECOVERY="$t/boot.img") || { echo "FAIL lower pit rc"; fail=1; }
 [[ ${out:-} == *"--recovery $t/boot.img"* && $out == *"--vbmeta $vb"* ]] || { echo "FAIL pit case: ${out:-}"; fail=1; }
