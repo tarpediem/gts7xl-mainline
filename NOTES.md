@@ -1259,3 +1259,70 @@ under Hyprland not yet confirmed. No sound card, no accelerometer. Screenshot:
 `build/gui/hyprland-desktop.png` (local only: shows the network name). grim from an SSH session
 hung once while the panel was idle; with the session active it works.
 Next target: Omarchy aarch64, design in `docs/omarchy-aarch64-design.md`.
+
+## 2026-11-17 — audio: speakers (ADSP + 4x CS35L41), kexec-tested on r40, validated by ear
+
+Hardware (stock live DT + vendor `techpack/audio/asoc/kona.c`, `sound/soc/codecs/cs35l41.c`):
+- 4x **CS35L41** rev A0 (DEVID 0x35a40; stock part name "cs35l40-spk") on QUP SE11 = `i2c11`
+  (0xa8c000, 1 MHz, GPIO 60/61) at 0x40-0x43; one shared reset (GPIO 69) and one shared
+  interrupt line (GPIO 84); VA/VP are a dummy always-on supply in stock.
+- Bus: **Primary TDM** (AFE port 0x9000), SoC clock provider, gpio138 sck / 139 din / 140 dout /
+  141 ws (stock `pri_tdm_*_active`), stock q6 settings: short sync, internal, 1-bit delay.
+- Boost: stock peak 4100 mA; the stock driver writes no inductor/capacitor values, the boost
+  registers stay at reset (BSTCVRT_COEFF 0x2424, SLOPE_LBST 0x7500) = what mainline programs for
+  1.0 uH / 0-19 uF. Read back on the tablet: identical.
+- Speaker protection: Samsung runs a Cirrus DSP firmware (vendor `/firmware/cs35l40-spk-dsp1-spk-prot.{wmfw,bin}`,
+  tuning "TAB_S7P_SPKPV2_PPP_20200602", only DSP coefficients, no register patches). **Not loaded
+  here** (no protection), so the gains are capped instead (below).
+- Positions checked by ear, one amp at a time, landscape as the display is mounted (Hyprland):
+  **0x41 top left, 0x40 bottom left, 0x43 top right, 0x42 bottom right.** The stock
+  `cirrus,right-channel-amp` flags (0x42, 0x40) do not match this orientation and are not used.
+
+Kernel (linux `gts7xl-audio`, aport patches 0031-0032, test package pkgrel 40 = release 7.3.4-r40):
+- 77d829629 `ASoC: qcom: sm8250: primary TDM with several codecs`: 4 slots x 16 bit, 48 kHz,
+  BCLK 3.072 MHz (PRI_TDM_IBIT, stays on like the MI2S ports), DSP_A, codec n gets slot n % 2,
+  SCLK as the codec PLL reference. q6afe uses the "invert" clock attribute for TDM, so the codecs
+  are NB_NF (stock: normal SoC clock + IB codec). 32-bit slots like stock are impossible: mainline
+  cs35l41 ties the ASP slot width to the sample width and accepts only S16/S24.
+- 5a3206351 DTS: `&adsp` (firmware `qcom/sm8250/samsung/gts7xl/adsp.mbn`), `&gpi_dma1` (stock EE
+  offset 0x6000), `&qupv3_id_1`, `&i2c11` + 4 amps (sound-name-prefix Top/Bottom Left/Right,
+  reset on every node: first prober owns it, others "assuming shared reset"; interrupt open drain
+  + SoC pull-up instead of stock push-pull x4 on one line), `&q6afedai` PRIMARY_TDM_RX_0,
+  `&q6asmdai` MultiMedia1/2, `&sound` (qcom,sm8250-sndcard, link order TL, TR, BL, BR).
+- Config was already complete (QDSP6, CS35L41_I2C, SM8250, in-kernel PD mapper).
+
+Firmware: `tools/extract-adsp.py BL_<...>.tar.md5 build/firmware-audio` (FAT reader of
+extract-gpu-zap.py + pil-squash): NON-HLOS `image/adsp.{mdt,b00-b20}` -> `adsp.mbn` (23892108 bytes,
+sha256 97ccdbf8fae60781 for T976BXXS7DXH1) + `adspr.jsn`, `adspua.jsn`. Samsung-signed: never
+commit. Installed in `/lib/firmware/qcom/sm8250/samsung/gts7xl/`. The linux-firmware RB5 adsp.mbn
+in `qcom/sm8250/` is not signed for this board.
+
+Userspace (pmaports `gts7xl-audio` 7641d5002, 975d02ec9):
+- `alsa-ucm-conf-samsung-gts7xl`: `conf.d/sm8250/Samsung Galaxy Tab S7+ 5G.conf` ->
+  `Samsung/gts7xl/HiFi.conf` (verb HiFi: `PRIMARY_TDM_RX_0 Audio Mixer MultiMedia1`; device
+  Speaker: every amp Analog PCM Volume 6 = 6.5 dB (range 0.5-20.5), Digital PCM Volume 817 = 0 dB
+  (raw 913 = +12 dB), volume in software) and
+  `/usr/share/wireplumber/wireplumber.conf.d/51-gts7xl-speakers.conf`: **PipeWire must use S16LE**
+  on this card: with its default S24_LE on MultiMedia1 nothing is audible (cliamp stream measured
+  at -20 dBFS peak on the sink monitor, owner heard nothing); with S16LE it plays.
+- `firmware-samsung-gts7xl-adsp` (local build only), `device-samsung-gts7xl` r13
+  (-nonfree-firmware pulls both).
+- Tablet rootfs additions (by hand, carry to Omarchy): alsa-utils, alsa-ucm-conf, pipewire-alsa,
+  pipewire-pulse, pipewire-tools; the firmware and UCM files above; `/usr/local/bin/cliamp`.
+  cliamp v2.4.1: the official linux-arm64 release (sha256 f4e591542bb834fd, matches
+  checksums.txt) is glibc-linked and does not run on Alpine (gcompat lacks `__*_chk`); here it is
+  built from the v2.4.1 tag on the tablet (musl, `go build`, build deps removed). On Omarchy (glibc)
+  the release binary runs as is; it needs `pipewire-alsa` (plain ALSA fails: q6asm rejects its
+  buffer size, and a dmix wrapper hangs).
+
+Tests on the tablet (kexec from r19, build/audio/test-7.3.4-r40-*/):
+- `remote processor adsp is now up`, APR services 3/4/7/8, 4x `Cirrus Logic CS35L41 (35a40),
+  Revision: A0`, card `S5G [Samsung Galaxy Tab S7+ 5G]`, cs35l41 interrupt count 0 after playback,
+  0 "BTF: -22". Charger safety-monitor line identical to r19, Bluetooth and Wi-Fi up.
+- By ear (owner): -30 dBFS tones at 0.5 dB analog gain: faint; one amp at a time (880 Hz,
+  -20 dBFS, 6.5 dB): all four heard, positions above; left/right tones via PipeWire after the
+  mapping fix: "low left, high right" = stereo correct; cliamp + Rainwave Chiptune
+  (`https://relay.rainwave.cc/chiptune.mp3`) via PipeWire at cliamp -10 dB: plays.
+- Open: `AFE failed to vote (3)` and one AFE set-param error 0x16 at ADSP start (pipa carries a
+  HACK for the vote; playback unaffected); no speaker protection firmware; no IV feedback
+  (Primary TDM TX); headset over USB-C and microphones not started.
