@@ -1490,3 +1490,68 @@ image build, owner's wallpaper + fastfetch config carried by the build (local fi
 Host: NetworkManager profile `gts7xl-usb` (172.16.42.2/24 on enp202s0f3u1): the Omarchy rootfs runs
 no DHCP server on usb0, so the host lost its address after a re-enumeration.
 USB OTG / host: design only, docs/usb-dual-role-design.md.
+
+## 2026-11-17 night — sensors, hall, S Pen, cameras: bring-up prepared (not tested on hardware)
+
+No kexec and no root on the tablet from this agent (the sudo password is not typed by agents):
+everything below is built and staged, the hardware test is `tools/sensors-kexec-test.sh`.
+
+Sensors (stock live DT + vendor.img `/etc/sensors` + persist backup):
+- Everything sits behind the **SLPI** (`qcom,ssc@5c00000`, PIL "slpi"), on the SSC buses:
+  **LSM6DSO** accel/gyro (SSC SPI 1), **AK0991x** magnetometer, two **VEML3328** light/RGB
+  sensors, no proximity. Stock sensor list: light_cct, ambient_light, mag, accel, gyro, temp,
+  pickup, sar_backoff_motion. Mainline path = SLPI remoteproc + hexagonrpcd (sdsp, serves the
+  registry and the `/sdsp` libraries) + libssc + iio-sensor-proxy (already on Omarchy: ALARM
+  iio-sensor-proxy 3.9 linked with libssc 0.4.4, `ssccli` present). Same scheme as pmOS
+  xiaomi-pipa/elish (sm8250) and samsung-starqltechn.
+- Sensor supply: stock `sensor_vdd` = L8C fixed 1.8 V, turned on by the stock PIL before the SLPI
+  boots, only consumer: always-on in our DT. SSC pin state gpio67 (stock `proxy_int_default`).
+- Registry: the stock SLPI built `/mnt/vendor/persist/sensors/registry/registry` (187 files, factory
+  calibration) from the **MTP** json set (kona_lsm6dso_0_0: orient x=-y, y=+x, z=+z); it records the
+  config mtimes (1230735600): kept on the served configs so it is reused, not regenerated.
+- Firmware: `tools/extract-dsp.py slpi BL_….tar.md5 build/firmware-slpi` -> slpi.mbn (7442656 bytes,
+  sha256 9c34820f81434ab9, 22 phdrs), slpir.jsn, slpius.jsn (in-kernel pd-mapper has
+  msm/slpi/{root,sensor}_pd for sm8250). Tree: `tools/build-hexagonfs.sh` (260 files) ->
+  `build/hexagonfs-gts7xl`, installed by `tools/install-sensors.sh` into
+  /usr/share/qcom/sm8250/Samsung/gts7xl (hexagonrpcd guesses that path from model + compatible),
+  registry under /var/lib/hexagonrpcd/sensors-registry (writable by user fastrpc).
+- hexagonrpcd: not in ALARM; `arch/hexagonrpcd` PKGBUILD (upstream da7a374, sdsp-only unit as user
+  fastrpc); a hand build is on the tablet in ~/src/hexagonrpc/out/hexagonrpcd.
+- iio-sensor-proxy 3.9 tags fastrpc-sdsp only as ssc-light/ssc-compass: the device rule
+  `79-gts7xl-sensors.rules` adds ssc-accel + an identity ACCEL_MOUNT_MATRIX (check rotation).
+
+Hall sensors (vendor hall_ic.c, hall_ic_wacom.c): gpio157 book cover -> SW_LID, gpio110 digitizer
+cover -> SW_MACHINE_COVER, both low = magnet, 15 ms debounce, no wakeup. logind
+`HandleLidSwitch*=ignore` (no suspend support yet; GNOME still blanks on lid close).
+
+S Pen (Wacom W9021, stock `wacom,w90xx` @0x56 on QUP SE17, fw 0x403d in the chip): Samsung's own
+I2C protocol, not mainline wacom_i2c's: query = plain 31-byte read (block at offset 16, header
+0x0f), 0x31 = start sampling, 17-byte packets (type 1: in-range/eraser/side/tip bits, x/y BE16,
+12-bit pressure, height, tilt). New driver `wacom_w90xx` (linux a23fbc2da, syntax-checked with
+clang against the kernel headers, not linked: no aarch64 linker on the host), DT 28ecdbb12: i2c17 +
+GPI DMA2 (stock EE 0x6000), irq gpio136 level low, fwe gpio6 low, supply = stock fixed 3.3 V switch
+on gpio93 (boot-on in stock). Axes: stock = y inverted then x/y swapped into Android's portrait
+frame, which our touchscreen props undo, so the raw chip frame is the panel's landscape frame
+(22656 x 14160): no transform in DT. Not done: pen-in-garage (`SW_PEN_INSERTED`, stock reports it
+inverted from the garage notifications), BLE.
+S Pen BLE (Air actions): separate radio in the pen, Samsung-proprietary GATT service, charged
+through the digitizer coil when docked; the digitizer has BLE-charge commands 0xE8-0xEF (stock log
+"ble_mode(0xed)" = keep off). Pairing is driven by the Samsung app. Feasible only as a reverse
+engineering project; not touched.
+
+Cameras (stock cam-sensor nodes + camx module bins in vendor.img):
+| role | sensor | CCI / addr (7-bit) | CSIPHY | MCLK | reset | supplies (enable GPIOs) | mainline |
+|---|---|---|---|---|---|---|---|
+| rear wide 13 MP | Samsung S5K3M5 | CCI0 m0 / 0x2d | 0, 4 lanes | gpio94, 19.2 MHz | gpio73 | VANA gpio39 (also AF), VIO gpio37 | driver s5k3m5 (24 MHz tables only) |
+| rear UW 5 MP | Samsung S5K5E9 | CCI1 m0 / 0x10 | 2 | gpio95 | gpio78 | VANA gpio42, VIO gpio37 | no driver |
+| front 8 MP | Samsung S5K4HA | CCI0 m1 / 0x2d | 3 | gpio96 | gpio30 | VANA gpio38, VIO gpio37 | no driver |
+Rear AF actuator 0x0c and EEPROMs 0x58/0x51/0x50 on CCI1. All rails are external switches
+enabled by GPIOs (no PMIC voltage set by the SoC). Stock power-up (camx module): VIO, 1 ms, VANA,
+1 ms, reset, 1 ms, MCLK, 8 ms. Test tree `sm8250-samsung-gts7xl-rearcam.dtb` (linux 0a3ecd58b,
+never booted): CAMSS CSIPHY0 + CCI0 + S5K3M5 at 24 MHz MCLK, link 602.5 MHz.
+Fingerprint: Goodix GW9558 optical under-display on SPI7, owned by TrustZone (Samsung TA): not
+feasible on mainline. Grip/SAR: A96T3X6 x2 on GPIO-bitbanged I2C (not needed).
+
+Sources: linux `gts7xl-sensors` 9bdfaddc0 (SLPI + hall), 0a3ecd58b (rear camera DTB), a23fbc2da
+(wacom_w90xx), 28ecdbb12 (S Pen DT); pmaports `gts7xl-sensors` a9cfc19e1 (on r21: patches
+0033-0036, S5K3M5=m, TOUCHSCREEN_WACOM_W90XX=m, pkgrel left to the integration).

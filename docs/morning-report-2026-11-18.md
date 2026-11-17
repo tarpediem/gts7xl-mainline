@@ -44,3 +44,30 @@ command with `BOOT=build/archive/boot-shim-r20-09873501.img`, or Vol Up + Power 
 5. **Dock and app grid**: tap the dock icons; open the app grid and check the folders.
 6. **USB**: the USB-C port is still device-only (PC link). Hubs/keyboards on USB-C need the OTG
    work, which is designed but not started.
+
+## Camera & sensors (prepared overnight, not tested on the tablet)
+
+Nothing here is on the tablet's kernel yet, and nothing was flashed. The agents could not test it:
+it needs root on the tablet (your password), which they do not type.
+
+- **Screen rotation (accelerometer)**: the sensors (accelerometer/gyroscope, compass, two light
+  sensors) sit behind the sensor DSP (SLPI). Ready: device tree (SLPI on), the SLPI firmware and
+  sensor files from your stock firmware and your tablet's own calibration, hexagonrpcd (built on
+  the tablet in `~/src`), udev and service files. Files staged in `~/staging-sensors` on the tablet.
+  Feasible and likely to work; GNOME then rotates the screen by itself.
+- **Book cover**: the two magnet sensors become a lid switch and a "cover" switch. Closing the
+  cover will **not** suspend (set to ignore); GNOME just turns the screen off.
+- **S Pen (drawing)**: new driver for the Wacom digitizer (Samsung's protocol differs from the
+  mainline Wacom driver): pen position, pressure, hover, tilt, side button, eraser. Needs a
+  kernel built with it (pmaports branch `gts7xl-sensors`). Pen holder detection not done.
+  **S Pen Bluetooth (Air actions)**: proprietary Samsung protocol; not touched, low chance.
+- **Cameras**: rear 13 MP Samsung S5K3M5 has a mainline driver: a test device tree is ready
+  (separate file, not used at boot). Front 8 MP (S5K4HA) and ultra-wide 5 MP (S5K5E9) have no
+  Linux driver: each would need one written. Expect photos only through libcamera's software
+  pipeline (no autofocus at first).
+- **Fingerprint**: not possible (owned by the secure firmware). **Light sensor**: comes with the
+  sensor DSP work above (GNOME auto-brightness).
+
+To test (about 10 minutes, the tablet reboots twice, back on r20 at the end): from the PC,
+`tools/sensors-kexec-test.sh <root runner>`, or ask the coordinator to run it. Results land in
+`build/sensors-test-*/`.
