@@ -40,7 +40,13 @@ wait_down 60; wait_up 300 || { log "NOT BACK: owner needed, lock kept"; exit 2; 
 log back; sleep 40
 
 r 'uname -r; journalctl -b -k | grep -iE "wacom|w90xx|i2c17|88c000|gpi" | tail -20
-grep -B1 -A9 -i "w90xx" /proc/bus/input/devices
+grep -B1 -A9 -i "w90xx" /proc/bus/input/devices; for a in 0 1 24 25; do cat /sys/class/input/input*/device/../*/w90xx 2>/dev/null; done; python3 -c "import fcntl,struct,glob
+for e in glob.glob(\"/dev/input/event*\"):
+  n=open(\"/sys/class/input/\"+e.split(\"/\")[-1]+\"/device/name\").read().strip()
+  if \"W90xx\" not in n: continue
+  f=open(e,\"rb\")
+  for c,nm in ((0,\"X\"),(1,\"Y\"),(0x18,\"P\")):
+    b=bytearray(24); fcntl.ioctl(f,0x80184540+c,b); print(nm,struct.unpack(\"6i\",b)[:3])"
 libinput list-devices 2>/dev/null | grep -A12 -i "w90xx"
 journalctl -b -k | grep -iE "camss|cci|s5k3m5|csiphy|camcc" | tail -20
 ls /dev/media* /dev/video* /dev/v4l-subdev* 2>/dev/null | tr "\n" " "; echo
