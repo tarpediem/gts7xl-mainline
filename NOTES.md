@@ -1204,3 +1204,41 @@ on a detected wall charger, and the limit falls back to 475 mA on unplug.
 
 ## 2026-11-17T19:48:56+07:00 flash
 - BOOT: 9f062cf61e8abe1c32b8d65149dcffa947485bf8490773a212be68d3f9b26dce build/archive/boot-shim-r18-9f062cf6.img
+
+## 2026-11-17 — r19: r18 + Adreno 650 GPU (kexec-tested from r18, not flashed)
+
+Kernel `linux-samsung-gts7xl-7.3.4-r19`, release **7.3.4-r19**, uname `#20`: r18 + aport patch
+0030 (linux `gts7xl` 90b41160d, GPU nodes). The decompiled DTB differs from r18 only by the three
+GPU properties (gmu/gpu status, zap firmware-name): every charger setting is r18's. pmaports
+`gts7xl` 3f1d134fe (+ `device-samsung-gts7xl` r12 with `-nonfree-firmware`,
+`firmware-samsung-gts7xl-gpu-20240802`, built locally only).
+
+Images: kernel r19 installed in the rootfs chroot (`pmbootstrap chroot -r -- apk add
+--no-network -u linux-samsung-gts7xl`, mkinitfs ran), `pmbootstrap export build/`,
+`tools/build-recovery-shim.sh --cmdline-from build/archive/boot-shim-r18-9f062cf6.img` (cmdline
+identical to r18, checked).
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/archive/boot-shim-r19-671d2d87.img` (BOOT) | `671d2d8731149178` |
+| `build/archive/recovery-shim-r19-2c2d1d3f.img` (RECOVERY) | `2c2d1d3fe6e2325b` |
+| `build/shim-Image` | `99f0b6b67ec08cf4` |
+| `build/dtbs/sm8250-samsung-gts7xl.dtb` | `b38387914e6a6d7a` |
+
+Rootfs: `/usr/lib/modules/7.3.4-r19` added from the apk (root-owned, `depmod -a 7.3.4-r19`),
+`7.3.4` and `7.3.4-r18` untouched. GPU userspace and the zap shader were installed earlier
+(GPU entry above).
+
+Kexec test from r18 BOOT (19:58-20:01, build/gpu/r19-test-195820/), back to r18 by reboot:
+- r19: `safety monitor: CC 450000 uA, CHGIN 475000 uA (DCP 1800000 uA), CV reg 0xb, battery
+  2..41 C, timer 36000 s, capacity 75..80 %` (same line as r18), usb_type `[SDP]`,
+  input_current_limit 475000, hci0, wlan0 up (Wi-Fi came back after kexec), no failed unit,
+  0 "BTF: -22".
+- GPU: GMU firmware v2.1.8, freedreno FD650 (OpenGL ES 3.2), turnip Adreno 650 (Vulkan 1.3),
+  `glmark2-es2-drm` on screen score 819 (kmscon stopped for the test, restarted).
+- Back on r18: same charger line, `[SDP]`, 475000, hci0, Wi-Fi.
+
+Tests: 205 passed, `test_flash.sh` OK. Flash when the tablet is in Download Mode:
+
+    printf 'FLASH\n' | FLASH_SSH="ssh localhost" tools/flash.sh --pit build/gts7xl.pit --keep-vbmeta \
+        BOOT=build/archive/boot-shim-r19-671d2d87.img
