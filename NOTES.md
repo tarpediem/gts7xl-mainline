@@ -289,3 +289,11 @@ Notes for phase 1:
 - `sign_boot.py --cmdline` replaces the cmdline, so `pmos_boot_uuid` / `pmos_root_uuid` added by pmbootstrap are not in
   `boot-signed.img`; the initramfs must find the subpartitions by label. Decide in phase 1 whether to keep the uuids.
 - `build/samsung-gts7xl.img` is a symlink into the pmbootstrap chroot: a `pmbootstrap zap` removes it. Rebuild with the real password before flashing.
+
+## 2026-11-17T09:50:08+07:00 flash
+- RECOVERY: 76c90d3fd1b6f5f7e45628ae379fe20113f018676253e9a176de80f1c7d29687 build/recovery-shim.img
+- Result: FIRST MAINLINE BOOT. Booted RECOVERY (Vol Up + Power) through the vendor-DTB shim: Linux 7.3.4 up,
+  8 CPUs, 7.1 GiB RAM, UFS sda (37 partitions, 4096-byte blocks), MUIC switched over i2c0, USB gadget
+  18d1:d001 -> RNDIS, the host got 172.16.42.2, `telnet 172.16.42.1` reaches the pmOS debug shell.
+  Screen: plain white (simpledrm fb0 registered at 0x9c000000; console not visible yet).
+  dmesg saved to build/firstboot/dmesg-raw.txt (gitignored: contains device serials).
