@@ -78,9 +78,82 @@ Overlays carry no `qcom,msm-id`.
 - linux,cma
 - mailbox_mem: mailbox_region
 
-## 2026-11-17 — phase 0 review fixes (cmdline, 4K sectors, reproducible kernel) — not flashed
+## 2026-11-17 — boot shim + observable DTS — not flashed
 
-Supersedes the candidates of the entry below (those must not be flashed).
+Supersedes every earlier candidate (moved to `build/superseded/`; `boot-signed.img` is now only
+an intermediate and must not be flashed).
+
+Why: on the Tab S7 11" the ABL refused every image with a mainline DTB and booted anything
+behind the vendor DTB. The RECOVERY image now carries the **stock DTB + stock recovery_dtbo**
+for the ABL and a **boot shim** in the kernel slot, which starts our Image with our DTB.
+
+Sources:
+- linux `gts7xl`: 78dfd9767 (skeleton) + **faf7bc8d3** (memory map, ramoops, simple-framebuffer,
+  USB peripheral, UFS, keys, i2c0, GPIO 20-23 reserved, PM8150B dropped). Both are patches of
+  the aport; the package DTB is byte-identical to the host-built one.
+- pmaports `gts7xl`: **292cee6**. `linux-samsung-gts7xl-7.3.4-r2` (tarball + 2 patches,
+  USB gadget/configfs/NCM/RNDIS/ACM built in, `pmbootstrap kconfig check` OK),
+  `device-samsung-gts7xl-1-r4` (cmdline, 2800x1752, MUIC hook, i2c-tools).
+- shim: `tools/shim/` (start.S, shim.c, string.c, shim.lds) + libfdt from
+  `linux/scripts/dtc/libfdt` at v7.3.4 (fdt.c, fdt_ro.c, fdt_rw.c, fdt_wip.c).
+  Design taken from github.com/Iamtianyuyang/steamos-tabs7 at 306c52476ab5 (`boot/shim`, GPL-2.0-only).
+  Built with host clang 23.1.3 and LLD 22.1.8 from the pinned wheel `ziglang==0.17.1`
+  (`uv run --with ziglang==0.17.1 python -m ziglang ld.lld`; no lld package on the host).
+  Two builds of the same inputs give the same bytes.
+
+Candidates in `build/` (sha256, first 16):
+
+| File | sha256 | Use |
+|---|---|---|
+| `recovery-shim.img` | `d84512c91119610d` | RECOVERY, attempt A (stock AVB footer, vbmeta untouched) |
+| `recovery-shim-signed.img` | `121c6efecd61450f` | RECOVERY, attempt B (test-key footer + vbmeta disabled) |
+| `shim-Image` | `ea2fc21d8b93533b` | kernel slot of both (shim + DTB + Image) |
+| `dtbs/sm8250-samsung-gts7xl.dtb` | `5b434caa6797d318` | mainline DTB inside the shim |
+| `vmlinuz` | `14c7d5155ed04382` | Image.gz of the package; its Image (sha256 `4f67df359c621a0b`) is inside the shim |
+| `initramfs` | `b65d471892581725` | ramdisk of both |
+| `boot-signed.img` | `32b78e76bc97100c` | intermediate only |
+| `samsung-gts7xl.img` | `04102eb14c80f4da` | rootfs of the same install (not flashed in the first attempt) |
+
+Cmdline of both recovery images:
+
+    console=tty0 clk_ignore_unused pd_ignore_unused cpuidle.off=1 panic=5 pmos.debug-shell  pmos_boot_uuid=81209c16-1709-4aeb-87af-cbdd57248bae pmos_root_uuid=6a6fad83-f326-47a1-a7f8-fa96c6e7a0f6 pmos_rootfsopts=defaults
+
+What the ABL sees in `recovery-shim.img` (checked with unpack_bootimg / cmp / avbtool):
+- header v2, os 11.0.0, board `SRPTC16A007`, load offsets of the stock boot image;
+- `dtb` (1580275 bytes) and `recovery_dtbo` (2788831 bytes) byte-identical to the stock recovery's;
+- kernel slot: arm64 Image header with `text_offset 0x80000`, `image_size 0x3600000`, flags `0xa`
+  (stock: 0x80000, 0x461c000, 0xa);
+- last 64 bytes and vbmeta blob = the stock recovery's (A); `Partition Name: recovery`,
+  SHA256_RSA4096, rollback index 0 (B).
+
+Shim checked in an emulator (unicorn) with the real `shim-Image` and the device tree captured
+from the running stock kernel as "bootloader DTB", loaded at 0xa0080000: enters the Image at
+0xa0200000 with x0 = 0xa3190000; the DTB there is our tree with `/memory` reg, `bootargs`,
+`linux,initrd-start/end` equal to the captured ones; ~19.5 M instructions; green bar painted.
+
+Build commands (each pmbootstrap call through `ssh localhost`, udiskie paused during install):
+
+    git -C linux format-patch -1 <commit> --start-number N -o ../pmaports/device/testing/linux-samsung-gts7xl/
+    pmbootstrap checksum linux-samsung-gts7xl && pmbootstrap kconfig check linux-samsung-gts7xl
+    pmbootstrap build --force linux-samsung-gts7xl
+    pmbootstrap checksum device-samsung-gts7xl && pmbootstrap build -i -n device-samsung-gts7xl
+    pmbootstrap -y zap && pmbootstrap install --password changeme-not-flashed
+    pmbootstrap export build/
+    tools/build-recovery-shim.sh
+
+Tests: `uv run --no-project --with pytest --with unicorn pytest tests -q` (60 passed),
+`bash tests/test_flash.sh` (OK). DTB: `make CHECK_DTBS=y qcom/sm8250-samsung-gts7xl.dtb` clean
+(`build/dtbs-check.log`).
+
+Notes:
+- The ABL's command line is about 2900 bytes with ours near the start; mainline keeps the first
+  2047 bytes (COMMAND_LINE_SIZE 2048), so only `androidboot.*` arguments at the end are cut.
+- The image still has the placeholder password; rebuild with the real one before flashing USERDATA.
+- `reference/live/stock-config.txt` (gitignored): `/proc/config.gz` of the stock kernel, read over adb.
+
+## 2026-11-17 — phase 0 review fixes (cmdline, 4K sectors, reproducible kernel) — not flashed (superseded)
+
+Superseded by the entry above. Supersedes the candidates of the entry below (those must not be flashed).
 
 Why:
 - `sign_boot.py --cmdline` replaced the cmdline and dropped `pmos_boot_uuid` / `pmos_root_uuid` /

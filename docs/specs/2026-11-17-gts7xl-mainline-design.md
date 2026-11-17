@@ -72,6 +72,14 @@ Adreno 650). The kernel/DT work of phases 1-4 is the same either way.
 
 ## Phase 1 design: boot chain
 
+> **Amended 2026-11-17 (before the first flash).** Points 3 and 4 and the "flashed on every
+> attempt" line below are superseded. The ABL of the Tab S7 family only goes through with the
+> vendor DTB, so the image carries a **boot shim** in the kernel slot and the **stock DTB and
+> stock overlays** for the ABL; the shim hands the mainline DTB to the mainline kernel
+> (`tools/mkshim.py`, `tools/shim/`). The image goes to **RECOVERY**; BOOT and DTBO are never
+> written, VBMETA only in the second attempt. USB needs the MAX77705 MUIC switched from the
+> initramfs. Current procedure: `docs/runbooks/first-flash.md`.
+
 Requirements of the Samsung ABL (learned during the Droidian attempt):
 
 1. **boot.img header v2** containing kernel, initramfs and DTB, with an **AVB

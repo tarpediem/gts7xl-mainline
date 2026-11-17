@@ -1,7 +1,7 @@
 # First flash runbook — gts7xl (SM-T976B)
 
-Goal: put our mainline image in **RECOVERY** and try to boot it, while One UI keeps
-booting from BOOT. BOOT, DTBO and userdata are never written. The maintainer runs every
+Goal: put our mainline image (behind a boot shim, see step 0) in **RECOVERY** and try to
+boot it, while One UI keeps booting from BOOT. BOOT, DTBO and userdata are never written. The maintainer runs every
 command that touches the tablet; nothing here is run by an agent.
 
 State expected before starting: bootloader unlocked, stock T976BXXS7DXH1 + Magisk, USB
@@ -11,26 +11,37 @@ debugging on, tablet charged above 50 %.
 
 | Partition | Image | Why |
 |---|---|---|
-| RECOVERY | `build/recovery-stockfooter.img` (attempt A) or `build/recovery-signed.img` (attempt B) | our kernel + initramfs + mainline DTB, with its own `recovery_dtbo` section |
+| RECOVERY | `build/recovery-shim.img` (attempt A) or `build/recovery-shim-signed.img` (attempt B) | boot shim + mainline kernel + mainline DTB + initramfs, behind the **stock** DTB and overlays |
 | VBMETA | untouched (A) or `tools/images/vbmeta-disabled.img` (B) | see step 4 |
 | DTBO | **never** | One UI needs the stock overlays; a non-stock DTBO also fails AVB (dtbo is a chain partition of the stock vbmeta) |
 
-When the ABL boots RECOVERY with a header v2 image it reads the overlays from the image's
-`recovery_dtbo` section, not from the DTBO partition. Ours holds `build/recovery-dtbo-noop.img`:
-the stock table shape (8 entries, same board ids and `dtbo-version`) with overlays that
-change nothing.
+Why a shim: on the Tab S7 11" the Samsung bootloader (ABL) refused every image whose DTB
+was a mainline DTB ("Custom Binary Blocked By OEM Lock" after 19-26 s), from BOOT and from
+RECOVERY, while a 184-byte test program booted fine with the vendor DTB. The ABL only goes
+through with the vendor device tree; what sits in the kernel slot is not checked.
+So the image the ABL sees is as stock as possible:
 
-Rebuild the two candidates after every new `build/boot-signed.img`:
+- `dtb` section = the stock recovery's DTB (4 FDTs, the first one `qcom,msm-id = <0x164 0x20001>`), byte for byte;
+- `recovery_dtbo` section = the stock recovery's overlays (entry 04 = `qcom,board-id = <8 6>`), byte for byte;
+- header fields = the stock boot image's; cmdline = ours;
+- kernel slot = `build/shim-Image`: a small program (`tools/shim/`) that carries our mainline
+  `Image` and our mainline DTB. Its Image header announces what the stock kernel announces
+  (`text_offset 0x80000`, an `image_size` covering all it uses).
+
+The ABL applies its overlay to the vendor DTB, fills in `/memory`, the command line and the
+ramdisk address, and jumps to the shim with that DTB. The shim copies those values into the
+mainline DTB, puts the mainline Image on a 2 MiB boundary and jumps to it. The kernel never
+sees the vendor DTB. The same chain boots mainline 6.18 on the Tab S7 11"
+(github.com/Iamtianyuyang/steamos-tabs7, from BOOT; here from RECOVERY).
+
+Rebuild both candidates after every `pmbootstrap install` + `pmbootstrap export build/`:
 
 ```sh
-python3 tools/dtbo.py noop reference/raw/dtbo.img build/recovery-dtbo-noop.img
-python3 tools/mkrecovery.py --stock-recovery build/stock/recovery.img \
-    --recovery-dtbo build/recovery-dtbo-noop.img --stock-footer \
-    build/boot-signed.img build/recovery-stockfooter.img
-python3 tools/mkrecovery.py --stock-recovery build/stock/recovery.img \
-    --recovery-dtbo build/recovery-dtbo-noop.img \
-    build/boot-signed.img build/recovery-signed.img
+tools/build-recovery-shim.sh        # mkshim.py, sign_boot.py, mkrecovery.py --kernel --stock-dt
 ```
+
+The first flash carries no root filesystem: USERDATA is not written. The command line has
+`pmos.debug-shell`, so the initramfs stops in its debug shell and waits (step 5).
 
 `build/stock/` holds the rollback images taken from the T976BXXS7DXH1 firmware:
 `recovery.img`, `vbmeta.img`, `dtbo.img`, `boot-stock.img`, `boot-magisk.img`
@@ -92,8 +103,8 @@ Enter Download Mode again (step 2).
 ### Attempt A — RECOVERY only, vbmeta untouched (do this first)
 
 ```sh
-tools/flash.sh --dry-run --pit build/gts7xl.pit --keep-vbmeta RECOVERY=build/recovery-stockfooter.img
-tools/flash.sh           --pit build/gts7xl.pit --keep-vbmeta RECOVERY=build/recovery-stockfooter.img
+tools/flash.sh --dry-run --pit build/gts7xl.pit --keep-vbmeta RECOVERY=build/recovery-shim.img
+tools/flash.sh           --pit build/gts7xl.pit --keep-vbmeta RECOVERY=build/recovery-shim.img
 ```
 
 The real run calls `heimdall detect`, lists what will be written and waits for the word
@@ -107,8 +118,8 @@ mismatch, the same kind the unlocked bootloader already accepts for the Magisk B
 ### Attempt B — RECOVERY + VBMETA disabled (only if A is refused by the bootloader)
 
 ```sh
-tools/flash.sh --dry-run --pit build/gts7xl.pit RECOVERY=build/recovery-signed.img
-tools/flash.sh           --pit build/gts7xl.pit RECOVERY=build/recovery-signed.img
+tools/flash.sh --dry-run --pit build/gts7xl.pit RECOVERY=build/recovery-shim-signed.img
+tools/flash.sh           --pit build/gts7xl.pit RECOVERY=build/recovery-shim-signed.img
 ```
 
 Risk of B: a vbmeta with verification disabled changes how One UI boots. On Samsung
@@ -126,16 +137,57 @@ From One UI instead: `adb -s <serial> reboot recovery`.
 Start a stopwatch and watch the host:
 
 ```sh
-sudo dmesg -w | grep -iE "usb|cdc|rndis"      # on the host, in another terminal
+sudo dmesg -w | grep -iE "usb|cdc|rndis|ncm"      # on the host, in another terminal
 ```
+
+What the screen tells, in boot order:
 
 | What you see | Meaning |
 |---|---|
 | Red text "Custom Binary(recovery) Blocked By OEM Lock" or straight back to Download Mode within a few seconds | the bootloader refused the image (AVB) — try attempt B |
-| Unlocked-bootloader warning, then logo, then Download Mode / block screen after about 20-30 s | the bootloader hung or gave up on the device tree (seen on the Tab S7 11" with a mainline DTB) |
-| Logo stays, nothing on USB, tablet reboots by itself | the kernel probably started and died: read pstore (step 7) |
-| New USB device `18d1:d001` / RNDIS on the host | the pmOS initramfs is up: `telnet 172.16.42.1` |
+| Unlocked-bootloader warning, then logo, then Download Mode / block screen after about 20-30 s | the bootloader gave up even with the vendor DTB: note the exact text and time, go back to One UI |
 | Stock recovery menu | RECOVERY was not written, or the key combo booted the old image: check `NOTES.md` |
+| Whole screen **yellow** | shim: the bootloader did not pass a device tree |
+| Whole screen **red** | shim: the bootloader put its DTB or the ramdisk inside the shim's memory window |
+| Whole screen **magenta** | shim: its embedded mainline DTB is unusable |
+| Whole screen **cyan** | shim: no `/memory` in the bootloader's DTB |
+| **Green bar** across the top of the logo | the shim finished and jumped into the mainline kernel |
+| Green bar, then nothing changes, tablet reboots by itself or hangs | the kernel started and died before the display driver: read pstore (step 7) |
+| Kernel text on the screen | mainline is running (`simple-framebuffer` + `console=tty0`) |
+| postmarketOS debug shell text on screen | the initramfs is up and waiting |
+
+A coloured screen or a hang never ends by itself: hold Vol Down + Power 7 s (step 6).
+
+### The debug shell over USB
+
+The initramfs sets up a USB network gadget (`18d1:d001`, NCM, plus a serial port), then the
+hook `00-gts7xl-usb-muic.sh` switches the tablet's USB data lines to the SoC (they go through
+the MAX77705 MUIC, which the bootloader leaves open), then it enters the debug shell
+(`pmos.debug-shell`). On the host:
+
+```sh
+ip -br addr | grep 172.16.42            # the new usb interface gets 172.16.42.2 by DHCP
+telnet 172.16.42.1                      # root shell of the initramfs, no password
+```
+
+If the interface exists but has no address: `sudo ip addr add 172.16.42.2/24 dev <iface>`
+(and `sudo ip link set <iface> up`). The gadget's serial port is the fallback:
+`/dev/ttyACM0` on the host, with any serial terminal. The tablet screen shows a login
+prompt too, but nothing can be typed there yet (no touchscreen driver in the device tree).
+
+First things to save from the shell (copy the telnet output into `build/`):
+
+```sh
+dmesg                                   # full kernel log
+cat /proc/cmdline; cat /proc/iomem
+dmesg | grep -iE "gts7xl-usb-muic|dwc3|ufs|rpmh|deferred"
+cat /sys/kernel/debug/devices_deferred
+ls /dev/disk/by-partlabel 2>/dev/null || cat /proc/partitions    # UFS seen?
+```
+
+Nothing is mounted and nothing on UFS is written: without a root filesystem in USERDATA the
+initramfs has nowhere to go (`pmos_continue_boot` would stop with "boot partition not found").
+No USB device on the host does not mean Linux is down: check the screen, then pstore.
 
 Write the result in `NOTES.md` under the flash entry (time to each event, exact screen text).
 
@@ -157,27 +209,12 @@ adb -s <serial> shell su -c 'cat /proc/reset_reason /proc/reset_summary 2>/dev/n
 ```
 
 `pstore-console` holding lines of a 7.3 kernel proves our kernel ran. An empty
-`/sys/fs/pstore` means nothing was recorded: either the kernel never started, or our
-device tree has no matching `ramoops` node.
+`/sys/fs/pstore` means nothing was recorded: the kernel never got as far as pstore
+(green bar seen or not tells whether the shim handed over).
 
-The stock kernel only decodes the region if our node has the same layout:
-
-```dts
-reserved-memory {
-	ramoops@9fa00000 {
-		compatible = "ramoops";
-		reg = <0x0 0x9fa00000 0x0 0x100000>;
-		record-size = <0x40000>;
-		console-size = <0x40000>;
-		ftrace-size = <0x40000>;
-		pmsg-size = <0x40000>;
-		no-map;
-	};
-};
-```
-
-(`record-size` is `0x40000` on this tablet's live tree; upstream
-`sm8250-samsung-common.dtsi` uses `0x4000`, which the stock kernel would not parse.)
+The stock kernel only decodes the region if our node has the same layout. The
+`ramoops@9fa00000` node of `sm8250-samsung-gts7xl.dts` copies the live tree (1 MiB, record,
+console, ftrace and pmsg all `0x40000`; `tests/test_dts_memory.py` compares them).
 
 ## 8. Rollback
 
