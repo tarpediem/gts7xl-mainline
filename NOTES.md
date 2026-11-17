@@ -349,3 +349,21 @@ panel driver (command-mode panel: nobody sends frames). Check after boot: `mdss_
 
 Expected: kernel console (fbcon) on the panel after msm binds, brightness 128/255. If not: dmesg for
 `TCON not ready`, DSI `write failed`, DPU pp/TE timeouts.
+
+## 2026-11-17 — phase 2 safety fixes (kernel r6, not flashed)
+
+From `panel-safety-review.md` (GO_WITH_FIXES). `linux` 6f967c479: the TCON_RDY-high shortcut (no reset) is only
+taken after an enable() of our own that worked, so the first enable after boot always does reset + TCON wait
+(the ABL panel's link dies when msm resets MDSS); enable() never returns an error (logs it, forces the reset path
+next time) so disable() always sends display off before power is cut; `suppress_bind_attrs`. `linux` 93877676c:
+`off-on-delay-us = <100000>` on `octa-vdd`. `pmaports` kernel r6.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` | `0f3d127a670c7f8b` |
+| `build/recovery-shim-signed.img` | `0099abe1a3894a0a` |
+| `build/shim-Image` | `577961ed99b437ca` |
+
+Expected on the next boot: TCON_RDY probably high at hand-over; dmesg should show
+`TCON ready but not initialised by us: reset`, then `TCON ready after N ms`, then the console.
+Recovery from a bad picture: `echo 1 > /sys/class/graphics/fb0/blank; echo 0 > …` or reboot into One UI.
