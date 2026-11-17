@@ -48,7 +48,7 @@ Reference templates: upstream `sm8250-xiaomi-elish` and `sm8250-xiaomi-pipa`
 
 | # | System | Work | Done when |
 |---|---|---|---|
-| 0 | host | pmbootstrap, pmaports fork with `device-samsung-gts7xl`, sm8250-mainline kernel checkout with our DTS, tools | a pmOS image builds |
+| 0 | host | pmbootstrap, pmaports fork with `device-samsung-gts7xl`, upstream stable kernel checkout with our DTS, tools | a pmOS image builds |
 | 1 | pmOS | minimal DTS: boot, memory, UFS, USB | `ssh`/`telnet` into the tablet over USB, `dmesg` readable |
 | 2 | pmOS | OLED panel driver + display power | console shown on the panel |
 | 3 | pmOS | touch (STM FTS) | Phosh usable by finger |
@@ -69,7 +69,10 @@ Requirements of the Samsung ABL (learned during the Droidian attempt):
 
 1. **boot.img header v2** containing kernel, initramfs and DTB, with an **AVB
    hash footer** signed with the AOSP test key, partition name `boot`.
-   Tool: `build-bootimg.py` from the Droidian port, copied into `tools/`.
+   Tool: `tools/sign-boot.py`, derived from the Droidian port's
+   `build-bootimg.py`. Header fields the ABL checks (load addresses, OS
+   version/SPL, board name) are copied from this tablet's **stock T976B
+   boot.img**, not from the Wi-Fi port's constants.
 2. **vbmeta disabled** (flags 0x02): `vbmeta-disabled.img`, always flashed in
    the same Heimdall command (single-image commits are unreliable on SM8250).
 3. **DTB selection by `qcom,msm-id` and `qcom,board-id`**: our mainline DTB must
@@ -121,7 +124,7 @@ never its Samsung-specific code.
 
 | Path | Content |
 |---|---|
-| `linux/` | clone of `gitlab.com/sm8250-mainline/linux`, branch `gts7xl`, built with `pmbootstrap envkernel` |
+| `linux/` | upstream **stable** kernel (latest release tag), branch `gts7xl`, built with `pmbootstrap envkernel`. `gitlab.com/sm8250-mainline/linux` stops at v6.13 (MAX77705 needs ≥ 6.15), so it is a source of cherry-picks only, not the base |
 | `pmaports/` | fork, `device/testing/device-samsung-gts7xl` |
 | `tools/` | AVB boot.img wrapper, empty-DTBO generator, `flash.sh` (one Heimdall command) |
 | `reference/` | downstream DTBs decompiled to text |
