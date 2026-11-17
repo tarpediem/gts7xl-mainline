@@ -70,7 +70,7 @@ def test_refuses_table_without_dt_table_magic(tmp_path):
 def test_stock_footer_is_grafted_unchanged(tmp_path):
     """--stock-footer keeps the stock recovery's own vbmeta blob and footer, byte for byte."""
     boot, stock = make_inputs(tmp_path)
-    stock.write_bytes(b"S" * (1 << 20) + b"\0" * (PART - (1 << 20)))
+    stock.write_bytes(b"S" * (1 << 20))
     subprocess.run(["avbtool", "add_hash_footer", "--image", str(stock), "--partition_size", str(PART),
                     "--partition_name", "recovery", "--algorithm", "SHA256_RSA4096",
                     "--key", str(mkrecovery.KEY), "--rollback_index", "7"], check=True)
@@ -88,7 +88,7 @@ def test_stock_footer_is_grafted_unchanged(tmp_path):
 
 def test_stock_footer_needs_room_before_stock_vbmeta(tmp_path):
     boot, stock = make_inputs(tmp_path)
-    stock.write_bytes(b"S" * 4096 + b"\0" * (PART - 4096))   # stock vbmeta would sit at 4096: inside our image
+    stock.write_bytes(b"S" * 4096)   # stock vbmeta would sit at 4096: inside our image
     subprocess.run(["avbtool", "add_hash_footer", "--image", str(stock), "--partition_size", str(PART),
                     "--partition_name", "recovery", "--algorithm", "SHA256_RSA4096",
                     "--key", str(mkrecovery.KEY)], check=True)
