@@ -719,3 +719,12 @@ Also on kexec boots: `DSI PLL(0) lock failed` + clk "already disabled/unprepared
 
 Tests: 140 passed (`test_modules_hook.py::test_wireless_after_buffyboard_restart` failed once
 under load, passed alone and on rerun); `test_flash.sh` OK. Not flashed.
+
+## 2026-11-17 r14 (kexec) — first Wi-Fi connection
+- Kexec from RECOVERY #13 into r14 (#15): touch OK after kexec (GPI reclaim), wlan0 present.
+- `tools/wifi-connect.sh`: wpa_supplicant 2.11 + libs from the aarch64 rootfs chroot pushed to /tmp/w (not in
+  the initramfs yet); WPA2-PSK and WPA3-SAE network blocks; busybox udhcpc needs its own bound script.
+- Result on a 5 GHz home AP: WPA2-PSK COMPLETED, -48 dBm, tx 648 Mbit/s HE80 MCS6 NSS2, DHCP lease,
+  ping 1.1.1.1 ~23 ms avg, DNS OK. telnetd stays bound to 172.16.42.1 only (not reachable from the LAN).
+- Notes: the Alpine wpa_supplicant has no `-f` (log file) support; Wi-Fi after kexec only works when the
+  previous kernel had the QCA6390 off (proper wireless power-off at shutdown still to do).
