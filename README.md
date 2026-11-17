@@ -24,7 +24,9 @@ Status: early bring-up. Expect rough edges.
 - UFS storage.
 - USB networking (RNDIS/NCM) and the postmarketOS initramfs debug shell over USB
   (`telnet 172.16.42.1`). Tooling for kexec and module push over USB is in place
-  (`docs/runbooks/iterate-over-usb.md`) but not yet tested on the device.
+  (`docs/runbooks/iterate-over-usb.md`). The first kexec attempt oopsed in the old
+  kernel (kCFI check in `machine_kexec()`, fixed in kernel r12); kexec from r12 is not yet
+  tested on the device.
 
 ## What does not work yet
 

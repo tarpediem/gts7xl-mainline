@@ -539,3 +539,48 @@ Image/DTB/initramfs to /tmp/kx, `kexec -l … --reuse-cmdline`, `kexec -e`). Exp
 `/proc/bus/input/devices` lists pm8941_pwrkey and pm8941_resin, dmesg `PS_HOLD reset type set to warm (reboot=warm)`
 and `gts7xl-powerkey: watching /dev/input/eventN`; then: short press → screen off, touches ignored;
 short press → screen on, typing works. First real use of the panel's disable/unprepare → prepare/enable path.
+
+## 2026-11-17 — r12: kexec -e oopsed under kCFI; machine_kexec() __nocfi (not flashed)
+
+First real kexec (r10 running, `#11`): `kexec -l /tmp/kx/Image --dtb=… --initrd=… --reuse-cmdline` returned 0,
+`kexec_loaded` = 1; `kexec -e` → oops in the old kernel: `Unable to handle kernel paging request at virtual address
+00000001148d6ffc`, level 3 translation fault through TTBR0, `pc : machine_kexec+0x12c`, x8 = `00000001148d7000`,
+then panic → reboot (pstore kept in `build/kexec1/`, not in git: serials).
+
+Cause, read from the r10 Image (`machine_kexec` at `_text + 0x56ef0` from /proc/kallsyms, no KASLR): +0x128
+`ldr x8, [x19, #0x310]` (= `kimage->arch.kern_reloc`, a physical address), +0x12c `ldur w16, [x8, #-4]`, `movk w17`…,
+`cmp`, `brk #0x8228`, `blr x8`. That is the kCFI check of `kernel_reloc(kimage)` (`CONFIG_CFI=y`, clang): it loads
+the type hash at target − 4, in the page before the relocation page, which the kexec idmap in TTBR0 does not map. The
+copied relocation code (SYM_CODE) has no hash either, so it would `brk` even if mapped. Not a segment placement
+problem (kexec-tools uses only "System RAM"; no-map holes are excluded); `kexec -s` ends in the same function.
+Upstream master still has the plain `void machine_kexec(`.
+
+Fix: `linux` 50fbe0d8a `arm64: kexec: no kCFI check on the jump to the relocation code` (`__nocfi`, like
+`swsusp_arch_resume()`), pmaports 8fd0f31ce (patch 0018, kernel r12, `#13`). Checked in the r12 Image: `ldr x8, [x19, #0x310];
+blr x8`, no check. Guard: `tests/test_kexec_cfi.py`.
+
+The running kernel does the jump: **r10/r11 can never kexec**. One RECOVERY flash of r12 is needed first.
+
+Tools: `kexec_dtb.py` tolerates `fdtget -l` exiting 1 on the ABL-built tree (partial listing) and probes
+`/memory@80000000` directly; `kexec-push.sh` refuses a running kernel older than `#13` (`--force` to skip),
+`kexec -l` with a 300 s usbsh timeout then checks `kexec_loaded`, and the jump is
+`( trap '' HUP; exec setsid sh -c 'sleep 2; sync; exec kexec -e' ) … & true` (a plain `&` job died with the telnet
+session; HUP ignored from the fork closes the window before setsid; `& true` because `&;` is a syntax error).
+Tests (`tests/test_kexec_tools.py`): fake fdtget, fake usbsh for the version check, the jump under busybox ash with
+SIGHUP sent to the shell's process group.
+
+Sources: pmaports `linux-samsung-gts7xl-7.3.4-r12`, `device-samsung-gts7xl-1-r8` (unchanged).
+Tests: 121 passed, `test_flash.sh` OK.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` (copy: `build/archive/recovery-shim-r12-3754a375.img`) | `3754a375133ef1fb` |
+| `build/recovery-shim-signed.img` | `76bfd7747d9bd0ea` |
+| `build/shim-Image` | `146128ff9554f7b2` |
+| `build/vmlinuz` (kexec payload) | `59b3e3a3e14cc2a2` |
+| `build/initramfs` (kexec payload) | `77c0576dd8c6e70b` |
+| `build/dtbs/sm8250-samsung-gts7xl.dtb` (= r10) | `c7ce97975c4e3a48` |
+
+Flash (owner present, Download Mode): `tools/flash.sh --keep-vbmeta RECOVERY=build/recovery-shim.img`
+(dry run: `heimdall flash --RECOVERY build/recovery-shim.img --no-reboot`). Then, in the r12 debug shell:
+`tools/kexec-push.sh` (r12 → r12 is enough for a first test of the jump).
