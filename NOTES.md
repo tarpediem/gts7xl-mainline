@@ -1326,3 +1326,32 @@ Tests on the tablet (kexec from r19, build/audio/test-7.3.4-r40-*/):
 - Open: `AFE failed to vote (3)` and one AFE set-param error 0x16 at ADSP start (pipa carries a
   HACK for the vote; playback unaffected); no speaker protection firmware; no IV feedback
   (Primary TDM TX); headset over USB-C and microphones not started.
+
+## 2026-11-17 — r20: r19 + speakers (kexec-tested from r19, not flashed yet)
+
+Kernel `linux-samsung-gts7xl-7.3.4-r20`, release **7.3.4-r20**, uname `#21`: r19 + aport patches
+0031-0032 (linux `gts7xl` fast-forwarded to 5a3206351). pmaports `gts7xl` (fast-forwarded from
+`gts7xl-audio`, on top of the hyprland r13 commit): device-samsung-gts7xl r14 (-nonfree-firmware
+pulls firmware-samsung-gts7xl-adsp + alsa-ucm-conf-samsung-gts7xl), alsa-ucm-conf-samsung-gts7xl
+r1 (r0 in local repos predates the WirePlumber rule). Images from the rootfs chroot (apk add -u,
+mkinitfs, export), `tools/build-recovery-shim.sh --cmdline-from build/archive/boot-shim-r19-671d2d87.img`.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/archive/boot-shim-r20-09873501.img` (BOOT) | `0987350180097721` |
+| `build/archive/recovery-shim-r20-d83462ba.img` (RECOVERY) | `d83462bae64cf898` |
+| `build/shim-Image` | `52d265af06a8950c` |
+| `build/dtbs/sm8250-samsung-gts7xl.dtb` | `bb7fbfec7787b4ab` |
+
+Tablet rootfs: `/usr/lib/modules/7.3.4-r20` (from the apk, depmod), r18/r19 directories kept;
+firmware-samsung-gts7xl-adsp and alsa-ucm-conf-samsung-gts7xl r1 installed with apk (the user
+WirePlumber rule from the r40 tests removed, the packaged one is used).
+
+Kexec test from r19 (21:27-21:30, build/audio/test-7.3.4-r20-212710/), back to r19 by reboot:
+same safety-monitor line as r19, `[SDP]`, 475000, hci0, wlan0; GMU firmware v2.1.8 loaded;
+ADSP up, 4 amps, card S5G; PipeWire sink "Built-in Audio Speakers", stream opened S16_LE
+(packaged rule), 3x left/right tones played, cs35l41 interrupts 0. Not re-checked by ear on r20
+(same kernel code and DTB as the r40 build the owner listened to).
+
+    printf 'FLASH\n' | FLASH_SSH="ssh localhost" tools/flash.sh --pit build/gts7xl.pit --keep-vbmeta \
+        BOOT=build/archive/boot-shim-r20-09873501.img
