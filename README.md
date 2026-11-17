@@ -31,6 +31,8 @@ Status: early bring-up. Expect rough edges.
   `btmgmt`; nothing connected yet). The generic linux-firmware board data is used; the
   stock calibration can be added locally (`tools/wlan-fw-overlay.py`, see the runbook).
   Bluetooth has no BD address yet (set one with `btmgmt public-addr` before powering on).
+- Root filesystem on USERDATA (pmOS subpartitions, console UI, SSH with a key, NetworkManager,
+  bluez with a stable address): prepared, see `docs/runbooks/rootfs-on-userdata.md`.
 
 ## What does not work yet
 

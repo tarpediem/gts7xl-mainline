@@ -129,3 +129,23 @@ def test_initramfs_lists_and_blacklists_wireless():
     for fw in ["ath11k/QCA6390/hw2.0/amss.bin", "ath11k/QCA6390/hw2.0/m3.bin",
                "ath11k/QCA6390/hw2.0/board-2.bin", "qca/htbtfw20.tlv", "qca/htnv20.bin"]:
         assert f"/lib/firmware/{fw}.zst" in files
+
+
+def test_rootfs_boot_leaves_modules_to_udev(tmp_path):
+    # No pmos.debug-shell: the boot goes on to the root filesystem, whose udev loads them.
+    rig = Rig(tmp_path, telnetd=False)
+    rig.cmdline.write_text("console=tty0 pmos_root_uuid=x\n")
+    rig.run(GTS7XL_WAIT="10")
+    assert rig.res.returncode == 0
+    assert rig.elapsed < 0.5
+    assert rig.calls(settle=1.5) == []
+
+
+def test_rootfs_boot_still_loads_in_a_late_debug_shell(tmp_path):
+    # Volume Down (check_keys) or a failed boot starts telnetd without pmos.debug-shell.
+    rig = Rig(tmp_path, telnetd=False)
+    rig.cmdline.write_text("console=tty0 pmos_root_uuid=x\n")
+    rig.run(GTS7XL_WAIT="100")
+    assert rig.calls(settle=0.3) == []
+    rig.telnetd_flag.touch()
+    assert rig.calls() == ["modprobe stmfts1b"]

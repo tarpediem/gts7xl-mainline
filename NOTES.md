@@ -728,3 +728,62 @@ under load, passed alone and on rerun); `test_flash.sh` OK. Not flashed.
   ping 1.1.1.1 ~23 ms avg, DNS OK. telnetd stays bound to 172.16.42.1 only (not reachable from the LAN).
 - Notes: the Alpine wpa_supplicant has no `-f` (log file) support; Wi-Fi after kexec only works when the
   previous kernel had the QCA6390 off (proper wireless power-off at shutdown still to do).
+
+## 2026-11-17 — r15: root filesystem for USERDATA (prepared, not written, not flashed)
+
+Layout: standard pmOS subpartitions. The `--no-split --sector-size 4096` image (own GPT,
+header at byte 4096, `pmOS_boot` ext2 + `pmOS_root` ext4) goes raw at the start of userdata
+(sda37). Checked in postmarketos-initramfs 3.12.6 (`init_functions.sh`): `mount_subpartitions`
+scans every partition, `fdisk -l` must count 2, then `losetup -P --direct-io=on --sector-size
+4096`; root/boot by `pmos_root_uuid`/`pmos_boot_uuid`; first boot `parted resizepart 2 100%` +
+`resize2fs` on the loop device. Failing to find/mount root ends in `fail_halt_boot` → debug
+shell; Volume Down held during `check_keys` → debug shell; Volume Up held → fail on purpose
+(→ debug shell too).
+
+device-samsung-gts7xl r10 (pmaports caa85430a):
+- `pmos.debug-shell` removed from `deviceinfo_kernel_cmdline`.
+- `50-gts7xl-modules.sh`: without `pmos.debug-shell` it still waits for telnetd (late debug
+  shell) but loads nothing on timeout: the root filesystem's udev autoloads the modules (the
+  blacklist is initramfs only); switch_root kills the background job (`kill -9` of every `sh`).
+- `device-samsung-gts7xl-sshd-keyonly`: sshd_config.d drop-in, key only, no root.
+- `device-samsung-gts7xl-bluetooth`: bluez + btmgmt; `gts7xl-bt-addr.service` (bluetooth.service
+  drop-in, runs before bluetoothd) sets hci0's address with `btmgmt public-addr`, derived from
+  `/etc/machine-id` (sha256, locally administered unicast): stable across reboots, EFS never
+  read; `hidp` + `uhid` in modules-load.d (both `=m`) for keyboards.
+- pmbootstrap config: `ssh_keys = True`, `ssh_key_glob = ~/.ssh/gts7xl_ed25519.pub` (new key
+  pair on the build host, private key never in git). Random user password outside the repo.
+  Image: console UI, systemd, NetworkManager + wpa_supplicant, sshd, bluetooth.service enabled,
+  hostname gts7xl, `/etc/machine-id` empty (generated on first boot).
+
+New tools: `tools/write-userdata.sh` (target by `PARTNAME=userdata`, checks disk/size/PIT start/
+holders/mounts/block size, typed `ERASE-USERDATA`, re-resolve, `wget | dd conv=fsync` detached,
+byte count, read-back sha256, NOTES log), `tools/serve_file.py` (streams one file). Tests:
+`tests/test_write_userdata.py` (fake usbsh), `tests/test_bt_addr.py`, two hook cases.
+Dry run against the tablet (read-only): `/dev/sda37`, start byte 12693012480 = PIT USERDATA
+block 3098880 × 4096, 243138539520 bytes, 4096-byte blocks, no holders, not mounted.
+Runbook: `docs/runbooks/rootfs-on-userdata.md`.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/rootfs-r15.img` (1463812096 bytes, raw) | `c021a80ac9801c3f` |
+| `build/recovery-shim.img` (copy: `build/archive/recovery-shim-r15-59538de5.img`) | `59538de5022a9d1d` |
+| `build/recovery-shim-signed.img` | `6fc1335f44a0c0d5` |
+| `build/shim-Image` (= r14) | `6edd14f7f6c1db2f` |
+| `build/vmlinuz` (kexec payload, = r14) | `20b54500239f6f36` |
+| `build/initramfs` (kexec payload, zstd) | `a54113ffaa78dcee` |
+| `build/dtbs/sm8250-samsung-gts7xl.dtb` (= r14) | `496b84691d6272cc` |
+
+Cmdline of the pair (`pmos_root_uuid` = ext4 UUID of the image's `pmOS_root`, checked):
+
+    console=tty0 clk_ignore_unused pd_ignore_unused regulator_ignore_unused cpuidle.off=1 panic=5 oops=panic softlockup_panic=1 nmi_watchdog=panic reboot=warm  pmos_boot_uuid=1f14fc28-9e4c-4baa-8db4-58c747ee7cb9 pmos_root_uuid=793aa611-bf65-4305-a1b4-bd0dfc863699 pmos_rootfsopts=defaults
+
+Risks noted:
+- BOOT still holds One UI. A normal boot (or off-mode charging) runs Android's `fs_mgr`, which
+  formats a `formattable` userdata it considers wiped (no ext4/f2fs superblock at its start):
+  that would erase pmOS. Start only into RECOVERY until BOOT is handled.
+- systemd-logind's default `HandlePowerKey=poweroff`: a short power-key press in the root
+  filesystem powers the tablet off (the initramfs power-key hook does not run there).
+
+Not fixed, noted: buffyboard 3.6.0 sends `.`, `+`, `*`, `%` as KEY_KPDOT / KEY_KPPLUS /
+KEY_KPASTERISK, but its uinput device does not declare those keys, so the kernel drops them
+(those characters cannot be typed on the on-screen keyboard in the debug shell).
