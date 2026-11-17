@@ -1094,3 +1094,41 @@ Same cmdline (UUIDs) as r15, checked. Not flashed.
 Tests: 201 passed (+ `tests/test_kernel_charger.py`); `test_modules_hook.py::
 test_wireless_after_buffyboard_restart` failed once in the full run under load and passed alone
 (known flaky since r14); `test_flash.sh` OK.
+
+## 2026-11-17 — r18: input limit per cable type (kexec-tested on the PC port, not flashed)
+
+Owner decision: as stock, per cable: USB SDP (PC port) 475 mA, wall charger (DCP) 1800 mA
+(stock cable-info `default_input_current` 0x708). Battery side unchanged (450 mA, 4.27 V, 2-41 C,
+10 h, 80/75 %).
+
+Detection: mainline has no MUIC/USB-C driver, but the MAX77705 USB-C firmware runs BC1.2 itself and
+reports it in BC_STATUS (USB-C block 0x25, register 0x08; vendor `max77705-muic.h:212-219`, read the
+same way by the vendor MUIC driver): bit 7 VBUS present, bits 1:0 CHGTYP 1 SDP / 2 CDP / 3 DCP.
+On r15 at the PC port it reads 0x81 (VBUS, SDP). The charger reads it every check with an
+unclaimed SMBus read (the initramfs MUIC hook keeps the address). Only VBUS + CHGTYP DCP gives
+1800 mA; SDP, CDP, proprietary types, no VBUS or a read error give 475 mA. The selected value is
+the monitor's reference: written on a change (plug, unplug, other cable), otherwise "not above"
+is enforced, so a lower AICL value stays; AICL stays bounded (100 mA floor). `usb_type` shows
+the detected cable. linux 1aebd6d56 (driver + binding), 36208b21a (DTS) = aport patches 0028-0029,
+kernel 7.3.4-r18, uname `#19`.
+
+r18 on the tablet (kexec from r15, 19:31): `safety monitor: CC 450000 uA, CHGIN 475000 uA (DCP
+1800000 uA) …`, usb_type `[SDP]`, input_current_limit 475000, BC_STATUS 0x81, CNFG_09 0x92.
+Modules from `/usr/lib/modules/7.3.4-r18` (r17 directory removed, depmod run), hci0 and Wi-Fi
+(wlan0 192.168.100.111) up after kexec this time.
+
+**Pending: the B1 battery-current proof on a wall charger.** A logger runs on the tablet
+(`systemd-run --unit=b1-dcp sh /tmp/b1-dcp.sh`, log `/var/tmp/b1-dcp.log`): it waits up to 30 min
+for `[DCP]`, then logs auto / inhibit-charge / auto for 60 s each (battery current, voltage,
+input limit, BC_STATUS, CNFG_00/09, CHG_DTLS), then waits for the PC port again. Pass: battery
+current positive in auto, negative in inhibit-charge, CHG_DTLS 0x8 and CNFG_00 0x14 when inhibited,
+input limit 1800000 on DCP and 475000 again on the PC port.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/archive/boot-shim-r18-9f062cf6.img` (BOOT) | `9f062cf61e8abe1c` |
+| `build/archive/recovery-shim-r18-34b90907.img` (RECOVERY) | `34b909070988008c` |
+| kexec Image | `65fe1f902ad93418` |
+| `build/initramfs` | `7d11e7ad5cd8831e` |
+
+Same cmdline (UUIDs) as r15. Tests: 204 passed. Not flashed.

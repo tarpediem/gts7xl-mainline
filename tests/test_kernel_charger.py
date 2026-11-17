@@ -60,3 +60,23 @@ def test_per_revision_kernel_release():
     s = APKBUILD.read_text()
     assert '_localversion="-r$pkgrel"' in s
     assert s.count('LOCALVERSION="$_localversion"') == 2
+
+
+@needs_linux
+def test_dcp_limit_only_on_positive_detection():
+    src = CHG.read_text()
+    body = re.search(r"static unsigned int max77705_cable_input_limit\(.*?\n}\n", src, re.S).group(0)
+    # default is the SDP value; DCP only with VBUS present and CHGTYP == DCP
+    assert "unsigned int ua = chg->chgin_sdp_ua;" in body
+    assert "(data.byte & MAX77705_BC_VBUSDET)" in body
+    assert body.count("ua = chg->chgin_dcp_ua") == 1
+    assert "case MAX77705_BC_CHGTYP_DCP:" in body
+
+
+def test_dts_dcp_limit_within_stock():
+    dts = (LINUX / "arch" / "arm64" / "boot" / "dts" / "qcom" / "sm8250-samsung-gts7xl.dts")
+    if not dts.exists():
+        pytest.skip("needs the linux/ checkout")
+    m = re.search(r"maxim,dcp-input-current-limit-microamp = <(\d+)>;", dts.read_text())
+    # stock cable-info default_input_current 0x708 = 1800 mA
+    assert m and int(m.group(1)) <= 1800000
