@@ -1,0 +1,17 @@
+# gts7xl: the kernel and the boot chain come from linux-gts7xl (ABL + shim, no UEFI).
+# Refuse any transaction that would install another kernel or a UEFI boot loader.
+[Trigger]
+Type = Package
+Operation = Install
+Operation = Upgrade
+Target = linux
+Target = linux-aarch64
+Target = linux-omarchy*
+Target = limine
+Target = limine-*
+
+[Action]
+Description = gts7xl: refusing a foreign kernel / UEFI boot loader (see /usr/share/libalpm/hooks/00-gts7xl-no-foreign-kernel.hook)
+When = PreTransaction
+Exec = /usr/bin/false
+AbortOnFail

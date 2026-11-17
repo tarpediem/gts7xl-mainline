@@ -1387,3 +1387,23 @@ key): `pmos-root.tar.zst` (full root, one filesystem, without /var/cache/apk; 25
 read back), `pmos-boot.tar.zst`, `extracts.tar.zst` (home, /etc, bluetooth, modules, zap),
 `packages.txt`, `cmdline-uuids.txt`, `SHA256SUMS`. Taken 21:12-21:15 on r19 (before the r20
 flash).
+
+### 2026-11-17 — Omarchy image completed (audio, Wi-Fi, poubelle, Firefox, speaker protection)
+
+`build/omarchy/omarchy-gts7xl.img` rebuilt: sha256
+`9a8abc42accc65dd8248dbf99de0e834084ee9ac2a9dd6b8a89d9da655c9adef`, e2fsck -fn clean, root
+15.5 GiB (grows on first boot). Added: ADSP firmware and UCM/WirePlumber files from
+`firmware-samsung-gts7xl-adsp` / `alsa-ucm-conf-samsung-gts7xl` r1, alsa-utils (pipewire-alsa,
+pipewire-pulse, btop already in Omarchy), cliamp v2.4.1 linux-arm64 (`/usr/local/bin`, sha256
+f4e591542bb834fd = checksums.txt), Firefox 160 (next to Omarchy's Chromium), the saved
+NetworkManager connection (600 root, from the pmOS backup), hostname poubelle (/etc/hostname,
+/etc/hosts), /etc/motd (rebutos), IgnorePkg for foreign kernels + an aborting pacman hook
+(`00-gts7xl-no-foreign-kernel.hook`) + an Omarchy pre-refresh-pacman user hook that puts
+IgnorePkg back after `omarchy refresh pacman`.
+Speaker protection: volume keys rebound to `gts7xl-volume` (wpctl, max 0.6); PipeWire
+filter-chain sink "Speakers (protected)" (`/usr/share/pipewire/pipewire.conf.d/60-gts7xl-speaker-protection.conf`):
+2x bq_highpass 180 Hz (24 dB/oct) + linear x0.5 (-6 dB), playback to
+`alsa_output.platform-sound.HiFi__Speaker__sink`, session priority 2000 (default sink). Checked
+on pmOS (Alpine needs pipewire-filter-graph{,-builtin}; Arch ships the module): sink created,
+linked to the speakers, default; `node.dont-reconnect` had to go (the playback side starts before
+the ALSA sink exists). No limiter yet (no LSP/LADSPA in the snapshot): open.

@@ -13,10 +13,18 @@ inst 755 60-gts7xl-powerkey.sh usr/lib/gts7xl/gts7xl-powerkey
 sed 's|/usr/libexec/gts7xl-powerkey|/usr/lib/gts7xl/gts7xl-powerkey|' "$f/gts7xl-powerkey.service" > "$R/usr/lib/systemd/system/gts7xl-powerkey.service"
 printf '\n[Install]\nWantedBy=multi-user.target\n' >> "$R/usr/lib/systemd/system/gts7xl-powerkey.service"
 inst 755 gts7xl-hypr-dpms usr/bin/gts7xl-hypr-dpms
+inst 755 gts7xl-volume usr/bin/gts7xl-volume
+inst 644 60-gts7xl-speaker-protection.conf usr/share/pipewire/pipewire.conf.d/60-gts7xl-speaker-protection.conf
 inst 755 gts7xl-firstboot usr/lib/gts7xl/gts7xl-firstboot
 inst 644 gts7xl-firstboot.service usr/lib/systemd/system/gts7xl-firstboot.service
 inst 755 gts7xl-osk usr/bin/gts7xl-osk
 inst 644 70-bt-keyboard-esc.hwdb etc/udev/hwdb.d/70-bt-keyboard-esc.hwdb
+inst 644 00-gts7xl-no-foreign-kernel.hook usr/share/libalpm/hooks/00-gts7xl-no-foreign-kernel.hook
+inst 755 gts7xl-pacman-ignore "home/$U/.config/omarchy/hooks/pre-refresh-pacman.d/gts7xl-ignorepkg"
+chroot "$R" chown -R "$U:$U" "/home/$U/.config/omarchy"
+# IgnorePkg now (Omarchy's setup rewrote pacman.conf from its template).
+L='IgnorePkg = linux linux-aarch64 linux-omarchy linux-omarchy-headers linux-omarchy-aarch64 linux-omarchy-aarch64-headers linux-omarchy-dtbs limine limine-mkinitcpio-hook limine-snapper-sync'
+sed -i "/^IgnorePkg/d; 0,/^\[options\]$/s||[options]\n$L|" "$R/etc/pacman.conf"
 inst 644 gts7xl-wheel.rules usr/share/polkit-1/rules.d/40-gts7xl-wheel.rules
 inst 644 sshd-keyonly.conf etc/ssh/sshd_config.d/40-gts7xl-keyonly.conf
 inst 644 gts7xl-console.sysctl usr/lib/sysctl.d/60-gts7xl-console.conf
@@ -29,7 +37,8 @@ sed -i 's/^#\(en_US.UTF-8 UTF-8\)/\1/' "$R/etc/locale.gen"
 chroot "$R" locale-gen >/dev/null
 printf 'LANG=en_US.UTF-8\n' > "$R/etc/locale.conf"
 printf 'KEYMAP=us\n' > "$R/etc/vconsole.conf"
-printf "gts7xl\n" > "$R/etc/hostname"
+printf "poubelle\n" > "$R/etc/hostname"
+grep -q "poubelle" "$R/etc/hosts" 2>/dev/null || printf "127.0.0.1\tlocalhost\n::1\t\tlocalhost\n127.0.1.1\tpoubelle\n" >> "$R/etc/hosts"
 chroot "$R" systemd-hwdb update
 chroot "$R" systemctl enable gts7xl-bt-addr.service gts7xl-powerkey.service gts7xl-firstboot.service >/dev/null
 # No zram module in our kernel.

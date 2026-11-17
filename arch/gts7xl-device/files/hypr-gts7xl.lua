@@ -28,3 +28,9 @@ o.bind("SUPER + K", "On-screen keyboard", "gts7xl-osk")
 -- Power key: screen off/on (DPMS), as validated under pmOS; gts7xl-powerkey inhibits the
 -- touchscreen on the same press. Replaces Omarchy's power menu on this key.
 o.rebind("XF86PowerOff", "Screen off/on", "gts7xl-hypr-dpms", { locked = true })
+
+-- Volume keys capped at 60 % (no speaker protection firmware; distortion above that).
+o.rebind("XF86AudioRaiseVolume", "Volume up (max 60 %)", "gts7xl-volume raise", { locked = true, repeating = true })
+o.rebind("XF86AudioLowerVolume", "Volume down", "gts7xl-volume lower", { locked = true, repeating = true })
+o.rebind("XF86AudioMute", "Mute", "gts7xl-volume mute-toggle", { locked = true })
+hl.unbind("ALT + XF86AudioRaiseVolume")

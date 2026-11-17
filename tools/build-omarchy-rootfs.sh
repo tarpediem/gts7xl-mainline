@@ -194,6 +194,8 @@ setup() {
 
 device() {
 	mount_chroot
+	# pacman in qemu-user: no Landlock sandbox (removed again at the end of this step).
+	grep -q '^DisableSandbox' "$R/etc/pacman.conf" || sed -i 's/^\[options\]$/[options]\nDisableSandbox/' "$R/etc/pacman.conf"
 	# Kernel: modules of the r19 BOOT kernel (pmaports linux-samsung-gts7xl).
 	t=$(mktemp -d)
 	tar -xzf "$KERNEL_APK" -C "$t" usr/lib/modules 2>/dev/null
@@ -227,6 +229,29 @@ device() {
 	done
 	# GPU zap shader (Samsung-signed, local only).
 	install -Dm644 "$ZAP" "$R/usr/lib/firmware/qcom/sm8250/samsung/gts7xl/a650_zap.mbn"
+	# Audio (r20 work): ADSP firmware (Samsung-signed, local package) and the UCM + WirePlumber
+	# files from the pmaports packages; PipeWire ALSA/Pulse and alsa-utils from the repos.
+	for a in ${AUDIO_APKS:-}; do
+		t=$(mktemp -d); tar -xzf "$a" -C "$t" --exclude='.*' 2>/dev/null
+		[ -d "$t/lib/firmware" ] && { mkdir -p "$t/usr/lib"; cp -a "$t/lib/firmware" "$t/usr/lib/"; rm -rf "$t/lib"; }
+		cp -a "$t"/usr "$R"/ ; rm -rf "$t"; log "audio files from $(basename "$a")"
+	done
+	chown -R 0:0 "$R/usr/lib/firmware/qcom/sm8250/samsung" "$R/usr/share/alsa/ucm2/Samsung" 2>/dev/null || true
+	# Omarchy's stable ALARM mirror 404s some files it lists: official ALARM mirror as a
+	# download fallback during this step only (signed packages).
+	cp "$R/etc/pacman.d/mirrorlist" "$R/tmp/mirrorlist.stable"
+	echo 'Server = http://mirror.archlinuxarm.org/$arch/$repo' >> "$R/etc/pacman.d/mirrorlist"
+	for n in alsa-utils pipewire-alsa pipewire-pulse btop firefox; do
+		if in_root pacman -Q "$n" >/dev/null 2>&1; then log "present $n"; continue; fi
+		in_root pacman -S --noconfirm --needed "$n" > "$WORK/pkg-$n.log" 2>&1 && log "installed $n" || log "FAILED $n (see $WORK/pkg-$n.log)"
+	done
+	cp "$R/tmp/mirrorlist.stable" "$R/etc/pacman.d/mirrorlist"
+	# cliamp: official linux-arm64 release, sha256 checked against its checksums.txt.
+	if [ -s "$WORK/cliamp/cliamp-linux-arm64" ] && (cd "$WORK/cliamp" && sha256sum -c --ignore-missing --status checksums.txt); then
+		install -Dm755 "$WORK/cliamp/cliamp-linux-arm64" "$R/usr/local/bin/cliamp"; log "cliamp installed"
+	else log "cliamp: missing or checksum mismatch, not installed"; fi
+	# MOTD.
+	[ -s "$root_dir/build/rebutos-motd.ansi" ] && install -m644 "$root_dir/build/rebutos-motd.ansi" "$R/etc/motd"
 	# Device layer (bt address, power key, keyboard Esc, polkit, sshd, kmscon, Hyprland overrides).
 	"$DEV/install.sh" "$R" "$USERNAME"
 	# Identity carried over from the pmOS rootfs: SSH host keys and the authorized key.
@@ -241,7 +266,19 @@ device() {
 		fi
 		rm -rf "$t"
 	fi
+	# Saved Wi-Fi connection(s) from the pmOS rootfs (root-only, never printed).
+	if [ -n "$BACKUP" ]; then
+		t=$(mktemp -d); chmod 700 "$t"
+		zstd -dc "$BACKUP/pmos-root.tar.zst" | tar -x -C "$t" --wildcards './etc/NetworkManager/system-connections/*' 2>/dev/null || true
+		n=0
+		for c in "$t"/etc/NetworkManager/system-connections/*.nmconnection; do
+			[ -f "$c" ] || continue
+			install -D -m600 -o0 -g0 "$c" "$R/etc/NetworkManager/system-connections/$(basename "$c")"; n=$((n + 1))
+		done
+		rm -rf "$t"; log "NetworkManager connections carried over: $n"
+	fi
 	in_root ufw allow ssh >/dev/null 2>&1 || true
+	sed -i '/^DisableSandbox$/d' "$R/etc/pacman.conf"
 	log "device layer installed"
 }
 

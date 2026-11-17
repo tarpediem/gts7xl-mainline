@@ -1,0 +1,7 @@
+#!/bin/bash
+# Omarchy pre-refresh-pacman hook (gts7xl): `omarchy refresh pacman` rewrites /etc/pacman.conf
+# from its channel template; put back the kernel/boot loader IgnorePkg line.
+CONF=/etc/pacman.conf
+LINE='IgnorePkg = linux linux-aarch64 linux-omarchy linux-omarchy-headers linux-omarchy-aarch64 linux-omarchy-aarch64-headers linux-omarchy-dtbs limine limine-mkinitcpio-hook limine-snapper-sync'
+grep -qxF "$LINE" "$CONF" && exit 0
+sudo sed -i "/^IgnorePkg/d; 0,/^\[options\]$/s||[options]\n$LINE|" "$CONF"
