@@ -377,3 +377,26 @@ Recovery from a bad picture: `echo 1 > /sys/class/graphics/fb0/blank; echo 0 > �
   at 2800x1752 (photo: docs/photos/2026-11-17-first-console.jpg). USB debug shell still works.
 - To look at: "DSI PLL(0) lock failed" + WARN in dsi_phy_driver_probe at 0.38 s (harmless so far, display came up);
   UFS WriteBooster query attr idn 31 -22 (cosmetic); va_macro deferred (audio, phase 7).
+
+## 2026-11-17 — phase 3: touchscreen (STM FTS1BA90A), kernel r7 (not flashed)
+
+`linux` d49d342aa (binding `st,fts1ba90a`), b739d846f (new driver `stmfts1b.c`; mainline `stmfts.c` is another
+generation with other opcodes), ef2cb3211 (DTS: i2c5 400 kHz, touch @0x49, IRQ GPIO 15 level-low, L13A 3.3 V avdd,
+L14A 1.8 V vdd, gpi_dma0 okay). `pmaports` 32150ee: kernel r7 (patches 0009–0011, `CONFIG_TOUCHSCREEN_STMFTS1B=y`).
+Full report: `.superpowers/sdd/2026-11-17-phase0-preparation/touch-report.md`.
+
+- Sequence from the vendor driver: avdd, 1 ms, vdd, 5 ms; system reset (`FA 20 00 00 24 81`); wait ready event;
+  ID/version/panel reads; touch functions `30 61 00`; scan on `A0 00 01` while the input is open, `A0 00 00` otherwise.
+  No flash/config/calibration command (0x13 force calibration skipped). Rails never switched off (L14A is also the
+  stock display node's vddio).
+- Orientation: controller portrait 1752x2800 → `touchscreen-swapped-x-y` + `touchscreen-inverted-x`
+  (= Droidian matrix `0 1 0 -1 0 1`). If touches come out mirrored on both axes, use inverted-y instead.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` | `2161d2e8fda699e0` |
+| `build/recovery-shim-signed.img` | `4a20ccd2d92eb02e` |
+| `build/shim-Image` | `3b5e2a3d48dbb8f8` |
+
+Expected: dmesg `stmfts1b … fw 0x…`, `resolution 1752x2800`, input "STM FTS1BA90A Touchscreen"; finger works on
+buffyboard.
