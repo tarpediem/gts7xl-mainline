@@ -95,3 +95,56 @@ def test_stock_footer_needs_room_before_stock_vbmeta(tmp_path):
     with pytest.raises(SystemExit):
         mkrecovery.main(["--stock-recovery", str(stock), "--recovery-dtbo", str(tmp_path / "t"),
                          "--stock-footer", str(boot), str(tmp_path / "o.img")])
+
+def unpack_parts(img, where):
+    subprocess.run(["unpack_bootimg", "--boot_img", str(img), "--out", str(where)], check=True, capture_output=True)
+    return where
+
+def test_kernel_can_be_replaced(tmp_path):
+    """--kernel swaps the kernel payload (the boot shim) and nothing else."""
+    boot, stock = make_inputs(tmp_path)
+    (tmp_path / "shim").write_bytes(b"SHIM" * 5000)
+    out = tmp_path / "recovery.img"
+    mkrecovery.main(["--stock-recovery", str(stock), "--recovery-dtbo", str(tmp_path / "t"),
+                     "--kernel", str(tmp_path / "shim"), str(boot), str(out)])
+    parts = unpack_parts(out, tmp_path / "parts")
+    assert (parts / "kernel").read_bytes() == (tmp_path / "shim").read_bytes()
+    assert (parts / "ramdisk").read_bytes() == (tmp_path / "r").read_bytes()
+    assert (parts / "dtb").read_bytes() == (tmp_path / "d").read_bytes()
+    a, b = boot.read_bytes(), out.read_bytes()
+    assert a[64:576] == b[64:576] and a[608:1632] == b[608:1632]   # cmdline untouched
+    assert a[12:16] == b[12:16] and a[20:24] == b[20:24]           # kernel and ramdisk load addresses
+
+def make_stock_recovery(tmp_path):
+    """A stock-like recovery: header v2 with its own (vendor) dtb and recovery_dtbo."""
+    (tmp_path / "vd").write_bytes(b"VENDORDTB" * 400)
+    (tmp_path / "vt").write_bytes(dtbo.build([dtbo.Entry(8, 6, (0, 0, 0, 0), b"STOCKOVERLAY" * 40)]))
+    stock = tmp_path / "stock-recovery.img"
+    subprocess.run(["mkbootimg", "--header_version", "2", "--kernel", str(tmp_path / "k"),
+                    "--ramdisk", str(tmp_path / "r"), "--pagesize", "4096", "--base", "0",
+                    "--dtb", str(tmp_path / "vd"), "--dtb_offset", "0x1f00000",
+                    "--recovery_dtbo", str(tmp_path / "vt"), "--output", str(stock)], check=True)
+    stock.write_bytes(stock.read_bytes().ljust(PART, b"\0"))
+    return stock
+
+def test_stock_dt_takes_dtb_and_recovery_dtbo_from_the_stock_recovery(tmp_path):
+    """--stock-dt: the ABL gets the vendor DTB and the stock overlays, byte for byte."""
+    boot, _ = make_inputs(tmp_path)
+    stock = make_stock_recovery(tmp_path)
+    out = tmp_path / "recovery.img"
+    mkrecovery.main(["--stock-recovery", str(stock), "--stock-dt", str(boot), str(out)])
+    parts = unpack_parts(out, tmp_path / "parts")
+    assert (parts / "dtb").read_bytes() == (tmp_path / "vd").read_bytes()
+    assert (parts / "recovery_dtbo").read_bytes() == (tmp_path / "vt").read_bytes()
+    assert (parts / "kernel").read_bytes() == (tmp_path / "k").read_bytes()
+    assert (parts / "ramdisk").read_bytes() == (tmp_path / "r").read_bytes()
+    assert out.stat().st_size == PART
+
+def test_needs_one_source_for_the_overlays(tmp_path):
+    boot, stock = make_inputs(tmp_path)
+    with pytest.raises(SystemExit):
+        mkrecovery.main(["--stock-recovery", str(stock), str(boot), str(tmp_path / "o.img")])
+    stock = make_stock_recovery(tmp_path)
+    with pytest.raises(SystemExit):
+        mkrecovery.main(["--stock-recovery", str(stock), "--stock-dt", "--recovery-dtbo", str(tmp_path / "t"),
+                         str(boot), str(tmp_path / "o.img")])
