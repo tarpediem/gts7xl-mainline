@@ -16,8 +16,14 @@ source=("git+$url.git#commit=$_commit"
 	hexagonrpcd-sdsp.service
 	hexagonrpcd.sysusers
 	hexagonrpcd.tmpfiles
-	80-fastrpc.rules)
-sha256sums=(SKIP SKIP SKIP SKIP SKIP)
+	80-fastrpc.rules
+	0001-rpcd-samsung-paths.patch)
+sha256sums=(SKIP SKIP SKIP SKIP SKIP SKIP)
+
+prepare() {
+	# Samsung SLPI: registry/../sns_reg_version and ssc_hw_rev (tested on the gts7xl)
+	git -C hexagonrpc apply "$srcdir/0001-rpcd-samsung-paths.patch"
+}
 
 build() {
 	arch-meson hexagonrpc build

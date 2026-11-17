@@ -10,13 +10,16 @@
 #   PERSIST_TAR  tar of the stock /mnt/vendor/persist (backup of 2026-11-17):
 #                sensors/registry/registry/* = the registry the stock SLPI generated on
 #                THIS tablet (factory calibration included)
-#   OUTDIR       gets the hexagonrpcd root (-R): dsp/sdsp, sensors/{config,registry},
-#                sensors/sns_reg.conf, socinfo
+#   OUTDIR       gets the hexagonrpcd root (-R): dsp/sdsp, sensors/registry,
+#                sensors/sns_reg.conf, sensors/sns_reg_version, socinfo; the stock json
+#                configs go to sensors/config.stock (NOT served, see below)
 #
 # Install on the tablet as /usr/share/qcom/sm8250/Samsung/gts7xl/ (hexagonrpcd -R).
-# The registry records the mtime of every config file it was built from
-# (sns_reg_config, 1230735600 here); the configs keep that mtime so the SLPI reuses the
-# stock registry instead of rebuilding it from the json files.
+# The json configs are not served: when the SLPI sees them it parses them and then asks the
+# host for a "sns_registry" write interface that hexagonrpcd does not have, and the session
+# dies (tested 2026-11-17, even with the stock mtimes kept). With only the stock registry
+# (and its sns_reg_version, read through registry/../sns_reg_version: needs the gts7xl
+# hexagonrpcd patch) the SLPI uses the registry as is.
 # These are Samsung/Qualcomm files and per-device calibration: OUTDIR stays out of git.
 set -euo pipefail
 
@@ -28,7 +31,7 @@ done
 umask 077
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$out"/dsp/sdsp "$out"/sensors/config "$out"/sensors/registry "$out"/socinfo
+mkdir -p "$out"/dsp/sdsp "$out"/sensors/config.stock "$out"/sensors/registry "$out"/socinfo
 
 tar xOf "$bl" dspso.bin.lz4 | lz4 -dc > "$work/dspso.bin"
 for f in $(debugfs -R "ls /sdsp" "$work/dspso.bin" 2> /dev/null | tr -s ' ' '\n' |
@@ -38,12 +41,13 @@ done
 
 for f in $(debugfs -R "ls /etc/sensors/config" "$vendor" 2> /dev/null | tr -s ' ' '\n' |
 	grep -E '\.json$'); do
-	debugfs -R "dump -p /etc/sensors/config/$f $out/sensors/config/$f" "$vendor" 2> /dev/null
+	debugfs -R "dump -p /etc/sensors/config/$f $out/sensors/config.stock/$f" "$vendor" 2> /dev/null
 done
 debugfs -R "dump -p /etc/sensors/sns_reg_config $out/sensors/sns_reg.conf" "$vendor" 2> /dev/null
 
-tar xf "$persist" -C "$work" persist/sensors/registry/registry
+tar xf "$persist" -C "$work" persist/sensors/registry
 cp -p "$work"/persist/sensors/registry/registry/* "$out"/sensors/registry/
+cp -p "$work"/persist/sensors/registry/sns_reg_version "$out"/sensors/sns_reg_version
 
 # SoC info the stock sns_reg_config reads (/sys/devices/soc0/*): SM8250 = soc_id 356,
 # the registry was built from the MTP configs (kona_lsm6dso_0_0.json, not the QRD one).

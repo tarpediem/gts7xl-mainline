@@ -9,7 +9,8 @@
 #
 # Layout:
 #   ROOT/usr/lib/firmware/qcom/sm8250/samsung/gts7xl/{slpi.mbn,slpir.jsn,slpius.jsn}
-#   ROOT/usr/share/qcom/sm8250/Samsung/gts7xl/{dsp,sensors/config,sensors/sns_reg.conf,socinfo}
+#   ROOT/usr/share/qcom/sm8250/Samsung/gts7xl/{dsp,sensors/{sns_reg.conf,sns_reg_version},socinfo}
+#       (no sensors/config: see tools/build-hexagonfs.sh)
 #   ROOT/var/lib/hexagonrpcd/sensors-registry/  the registry (the SLPI writes calibration
 #       updates into it); sensors/registry in the tree above is a symlink to it. An existing
 #       registry on the target is kept.
@@ -33,9 +34,9 @@ for f in slpi.mbn slpir.jsn slpius.jsn; do install -m644 "$fw/$f" "$d/$f"; done
 
 t=$R/usr/share/qcom/sm8250/Samsung/gts7xl
 install -d -m755 "$t" "$t/sensors"
-rm -rf "$t/dsp" "$t/sensors/config" "$t/socinfo"
+rm -rf "$t/dsp" "$t/sensors/config" "$t/sensors/config.stock" "$t/socinfo"
 cp -a "$hfs/dsp" "$hfs/socinfo" "$t/"
-cp -a "$hfs/sensors/config" "$hfs/sensors/sns_reg.conf" "$t/sensors/"
+cp -a "$hfs/sensors/sns_reg.conf" "$hfs/sensors/sns_reg_version" "$t/sensors/"
 chown -R 0:0 "$t"
 
 reg=$R/var/lib/hexagonrpcd/sensors-registry
