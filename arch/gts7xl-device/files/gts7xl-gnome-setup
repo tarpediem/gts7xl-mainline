@@ -1,0 +1,36 @@
+#!/bin/sh
+# gts7xl GNOME touch setup (user settings, run in the user's session bus).
+set -e
+E=$HOME/.local/share/gnome-shell/extensions
+g() { gsettings set "$@"; }
+gx() { s=$1; shift; gsettings --schemadir "$E/$s/schemas" set "$@"; }
+g org.gnome.shell disable-user-extensions false
+g org.gnome.shell enabled-extensions "['dash-to-dock@micxgx.gmail.com', 'appindicatorsupport@rgcjonas.gmail.com', 'just-perfection-desktop@just-perfection']"
+g org.gnome.shell favorite-apps "['firefox.desktop', 'org.gnome.Console.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Settings.desktop', 'cliamp.desktop']"
+g org.gnome.desktop.interface color-scheme 'prefer-dark'
+g org.gnome.desktop.interface accent-color 'pink'
+g org.gnome.desktop.interface show-battery-percentage true
+g org.gnome.desktop.interface text-scaling-factor 1.0
+g org.gnome.desktop.interface cursor-size 24
+g org.gnome.desktop.peripherals.touchpad tap-to-click true
+g org.gnome.desktop.peripherals.touchpad natural-scroll true
+D=dash-to-dock@micxgx.gmail.com; S=org.gnome.shell.extensions.dash-to-dock
+gx $D $S dock-position 'BOTTOM'
+gx $D $S dock-fixed true
+gx $D $S intellihide false
+gx $D $S autohide false
+gx $D $S extend-height false
+gx $D $S dash-max-icon-size 64
+gx $D $S click-action 'minimize-or-previews'
+gx $D $S show-show-apps-button true
+gx $D $S show-trash false
+gx $D $S show-mounts false
+gx $D $S running-indicator-style 'DOTS'
+gx $D $S custom-theme-shrink false
+gx $D $S transparency-mode 'DYNAMIC'
+J=just-perfection-desktop@just-perfection; S=org.gnome.shell.extensions.just-perfection
+gx $J $S panel-size 48
+gx $J $S panel-button-padding-size 12
+gx $J $S panel-indicator-padding-size 8
+gx $J $S startup-status 0
+echo ok

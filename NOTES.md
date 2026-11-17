@@ -1452,3 +1452,10 @@ same by default (PASSWORD_FROM_WIFI=1).
 Kernel config to add in the next rev: Landlock (CONFIG_SECURITY_LANDLOCK + in lsm=) for pacman's
 sandbox; netfilter matches for ufw (xt_limit and the other xt_* ufw uses, IPv6 tables:
 IP6_NF_IPTABLES/filter, "Extension limit revision 0 not supported").
+GNOME touch setup (2026-11-17, live tablet): extensions from extensions.gnome.org for shell 51
+(arch/gts7xl-device/gnome-extensions.txt: Dash to Dock 110, AppIndicator 66, Just Perfection 37;
+GJS OSK skipped: no 51 in its metadata, built-in OSK kept; Blur my Shell skipped). Settings
+(files/gts7xl-gnome-setup): dock at the bottom, always visible, 64 px icons, minimize-or-previews,
+apps button; favorites Firefox, Console, Files, Settings, cliamp; dark, accent pink (matches the
+owner's rebutos wallpaper set by the coordinator), battery %, panel 48 px, tap-to-click, natural
+scroll, cursor 24, text scaling 1.0. All three extensions ACTIVE after a session restart.

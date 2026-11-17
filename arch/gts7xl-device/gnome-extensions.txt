@@ -1,0 +1,8 @@
+# GNOME Shell 51 extensions used on the tablet (extensions.gnome.org, version tags for shell 51).
+# Install: gnome-extensions install --force <zip>, then files/gts7xl-gnome-setup in the session,
+# then log out/in. sha256 (first 16) of the zips downloaded 2026-11-17:
+94fe0ef32b84f184  appindicatorsupport@rgcjonas.gmail.com.zip
+b05003e79835a354  dash-to-dock@micxgx.gmail.com.zip
+c54ccd627540d86e  just-perfection-desktop@just-perfection.zip
+# dash-to-dock 110 (tag 76105), appindicatorsupport 66 (tag 75340), just-perfection 37 (tag 74466).
+# Not used: gjsosk (no shell 51 in its metadata), blur-my-shell (GPU cost not measured).
