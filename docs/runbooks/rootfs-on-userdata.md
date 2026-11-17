@@ -37,6 +37,13 @@ What is in the image (pmbootstrap config `ui = console`, `ssh_keys = True`,
   the private key stays on the host;
 - the user's password (console login, sudo) is random, kept outside the repository by the
   maintainer; change it after the first login (`passwd`);
+- root: `sudo` (sudo-rs, from `postmarketos-base`; `%wheel ALL=(ALL) ALL`, the user is in
+  wheel) with the user's password. Over a non-interactive SSH command, feed it on stdin:
+  `ssh … 'sudo -S -p "" <cmd>' < <password file>`;
+- `device-samsung-gts7xl-polkit` (device r11): wheel runs NetworkManager actions and power
+  off / reboot / halt without a prompt, SSH sessions included (`nmcli device wifi connect`,
+  `systemctl reboot`); suspend and hibernate keep the polkit defaults (untested here);
+- `device-samsung-gts7xl-console` (device r11): see 9 (power key, quiet screen console);
 - USB networking as in the debug shell: the initramfs sets up the gadget and
   `172.16.42.1`, `unudhcpd@usb0` in the root filesystem keeps serving `172.16.42.2`;
 - Bluetooth: `device-samsung-gts7xl-bluetooth` = bluez (`bluetoothd`, `bluetoothctl`,
@@ -59,7 +66,7 @@ pmbootstrap config ssh_keys True
 pmbootstrap config ssh_key_glob '~/.ssh/gts7xl_ed25519.pub'
 pkill -STOP -f '^/usr/bin/python /usr/bin/udiskie'
 pmbootstrap -y zap && pmbootstrap install --no-split --no-sparse --sector-size 4096 \
-    --add device-samsung-gts7xl-sshd-keyonly,device-samsung-gts7xl-bluetooth \
+    --add device-samsung-gts7xl-sshd-keyonly,device-samsung-gts7xl-bluetooth,device-samsung-gts7xl-polkit,device-samsung-gts7xl-console \
     --password "$(cat <password file>)"
 pkill -CONT -f '^/usr/bin/python /usr/bin/udiskie'
 pmbootstrap export build/
@@ -196,9 +203,12 @@ back to BOOT. Do **not** let One UI boot while pmOS is on userdata (see 8).
 
 hci0 comes up unconfigured: the QCA6390 has no BD address, stock Android keeps it in EFS,
 and Linux never reads EFS. `gts7xl-bt-addr.service` (pulled in by a `bluetooth.service`
-drop-in, ordered before it) waits for hci0 and sets
-`btmgmt --index 0 public-addr <addr>`, with `<addr>` = first 6 bytes of
-`sha256("gts7xl-bt-addr:" + /etc/machine-id)`, first octet made locally administered and
+drop-in, ordered before it) waits for the controller and sets
+`btmgmt --index 0 public-addr <addr>`. hci0 appears in sysfs ~1.5 s before hci_qca has
+downloaded its patch and NVM; until then mgmt has no index 0 ("Invalid Index"), so the
+script polls `btmgmt --index 0 config` until it lists `public-address` under "missing
+options" (for up to 60 s, measured on the uptime clock, then gives up without failing the
+boot). `<addr>` = first 6 bytes of `sha256("gts7xl-bt-addr:" + /etc/machine-id)`, first octet made locally administered and
 unicast. `/etc/machine-id` is generated on the first boot of the install, so the address is
 stable across reboots (pairings survive) and changes only with a new install.
 
@@ -232,3 +242,24 @@ BOOT and RECOVERY both hold Linux, userdata holds pmOS. One UI needs all three b
    **Wipe data/factory reset**: it formats userdata.
 3. Reboot: One UI starts from BOOT as a fresh device.
    The full stock firmware (Odin/heimdall) restores everything else if needed.
+
+## 9. Power key and screen console (device-samsung-gts7xl-console)
+
+postmarketos-base-systemd ships `HandlePowerKey=ignore` in `/usr/lib/systemd/logind.conf`
+(graphical UIs handle the key themselves), so with the console UI a press did nothing.
+`gts7xl-powerkey.service` (static, started through a `multi-user.target.wants` link in the
+package) runs the initramfs power-key watcher in the foreground: a **short press (< 3 s)
+blanks the screen and inhibits the touchscreen; the next short press turns both back on**.
+A press of 3 s or more is ignored (the PMIC long-press reset still applies). Suspend was not
+chosen: s2idle is untested on this tablet (`cpuidle.off=1`, wake sources unknown), and a
+tablet that does not wake would need the long-press reset. Turn it off with
+`sudo systemctl mask gts7xl-powerkey`.
+
+The initramfs watcher itself does not survive `switch_root` (its shell is killed); its last
+`dd`/`od` pair stays blocked on the key until the next press, then exits. evdev gives every
+reader its own copy of the event, so it takes nothing from the service.
+
+`/usr/lib/sysctl.d/60-gts7xl-console.conf` sets `kernel.printk = 3 4 1 3`: only
+critical kernel messages reach tty1. The UFS driver logs
+`ufshcd_wb_curr_buff_threshold_check: dCurWriteBoosterBufferSize read failed -22` (KERN_ERR)
+every few seconds, which flooded the login prompt; it is still in `dmesg` and the journal.

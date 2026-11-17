@@ -148,8 +148,9 @@ want=$(printf '%s\n' flash --BOOT "$t/boot.img" --VBMETA "$vb" --no-reboot)
 [ "$(cat "$HEIMDALL_ARGV" 2>/dev/null)" = "$want" ] || { echo "FAIL argv: $(cat "$HEIMDALL_ARGV" 2>/dev/null)"; fail=1; }
 log=$(tail -n 4 "$notes")
 [[ $log == *" flash"* && $log != *FAILED* \
-   && $log == *"- BOOT: $(sha256sum "$t/boot.img" | cut -d' ' -f1) $t/boot.img"* \
-   && $log == *"- VBMETA: $(sha256sum "$vb" | cut -d' ' -f1) $vb"* ]] || { echo "FAIL success log: $log"; fail=1; }
+   && $log == *"- BOOT: $(sha256sum "$t/boot.img" | cut -d' ' -f1) boot.img"* \
+   && $log == *"- VBMETA: $(sha256sum "$vb" | cut -d' ' -f1) ${vb#"$repo"/}"* \
+   && $log != *"$t/"* ]] || { echo "FAIL success log: $log"; fail=1; }
 
 # --- failure: FAILED entry, exit status propagated
 cp NOTES.md "$notes"; reset

@@ -128,7 +128,10 @@ set -e
   if [ $rc = 0 ]; then echo; echo "## $(date -Is) flash"
   else echo; echo "## $(date -Is) flash FAILED (exit $rc)"; fi
   for i in "${!parts[@]}"; do
-    echo "- ${parts[i]}: $(sha256sum "${imgs[i]}" | cut -d' ' -f1) ${imgs[i]}"
+    # NOTES.md is public: the path relative to the repo, else the file name only.
+    shown=$(realpath -m --relative-to="$root" -- "${imgs[i]}")
+    case "$shown" in ../*|/*) shown=${imgs[i]##*/} ;; esac
+    echo "- ${parts[i]}: $(sha256sum "${imgs[i]}" | cut -d' ' -f1) $shown"
   done
 } >> "$notes"
 exit $rc

@@ -586,7 +586,7 @@ Flash (owner present, Download Mode): `tools/flash.sh --keep-vbmeta RECOVERY=bui
 `tools/kexec-push.sh` (r12 → r12 is enough for a first test of the jump).
 
 ## 2026-11-17T13:51:58+07:00 flash
-- RECOVERY: 3754a375133ef1fb14f4baf2a7163802eda4ab872c037639423d4c8d9ea31c88 /home/tarpediem/Work/samsung/gts7xl-mainline/build/recovery-shim.img
+- RECOVERY: 3754a375133ef1fb14f4baf2a7163802eda4ab872c037639423d4c8d9ea31c88 build/recovery-shim.img
 
 ## 2026-11-17 r12 — power key + first successful kexec
 - RECOVERY r12 (sha256 3754a375…): pm8941_pwrkey / pm8941_resin present, PS_HOLD warm reset set,
@@ -837,3 +837,65 @@ Tests: 182 passed (with unicorn: the shim emulation runs), `test_flash.sh` OK. T
 Dry run: `heimdall flash --RECOVERY …/recovery-shim-r15-59538de5.img --BOOT …/boot-shim-r15-eba2068f.img --no-reboot`.
 Way back to One UI: `rootfs-on-userdata.md` section 8 (stock boot + stock recovery, then wipe data
 from the stock recovery before any normal boot).
+
+## 2026-11-17T17:25:30+07:00 flash
+- RECOVERY: 59538de5022a9d1dfcd0c201de334266d42dcf5cc11d5e42d969f3f15dc6c505 build/archive/recovery-shim-r15-59538de5.img
+- BOOT: eba2068f68d3359be75544008c0322fd81bae276fa512b245479ebea6ea94535 build/archive/boot-shim-r15-eba2068f.img
+
+## 2026-11-17 — device r11: root, polkit, Bluetooth address, power key, quiet console
+
+Applied to the running rootfs on userdata (no reflash, no kexec): the r11 apks were copied
+over SSH and installed with `sudo apk add --allow-untrusted` (apk pins them by checksum in
+`/etc/apk/world`, fine while they exist in no repository).
+
+1. **Root.** It was there already: `sudo` is sudo-rs from `postmarketos-base`
+   (`%wheel ALL=(ALL) ALL`); it only failed in a non-interactive SSH command because it
+   asks for the password on a TTY. `sudo -S -p ""` with the password on stdin works. No
+   doas added. What was missing is polkit for SSH sessions (not active, not local):
+   new `device-samsung-gts7xl-polkit` (`/usr/share/polkit-1/rules.d/40-gts7xl-wheel.rules`):
+   wheel gets every `org.freedesktop.NetworkManager.*` action and login1 power-off / reboot /
+   halt (with `-multiple-sessions` and `-ignore-inhibit`) without a prompt. Suspend and
+   hibernate keep the defaults.
+2. **Bluetooth.** hci0 appears in sysfs at ~8.0 s, but hci_qca finishes its patch/NVM download
+   only at ~9.5 s; the service ran at 8.4 s and `btmgmt public-addr` got "Invalid Index" (0x11).
+   `gts7xl-bt-addr.sh` now polls mgmt: `info` shows our address → done; `config` lists
+   `public-address` as missing → set it; otherwise retry until 60 s (uptime clock, the wall
+   clock jumps at boot here), never failing the boot. After reboot:
+   "hci0 address set to … after 2s", `bluetoothctl list` shows the controller with the stable
+   address, bluetoothd picks it up (ordered after the service). Tests: `tests/test_bt_addr.py`
+   (stateful fake btmgmt: setup delay, failed set retried, bounded give-up).
+3. **Power key.** Short press did nothing: postmarketos-base-systemd sets
+   `HandlePowerKey=ignore` (`/usr/lib/systemd/logind.conf`), logind watches event0 but ignores
+   it, and the initramfs watcher is dead after `switch_root` (only an orphaned `dd`/`od` pair from
+   it remains, which exits at the next press). Choice: **blank/unblank** as in the debug shell, not
+   suspend (s2idle untested, `cpuidle.off=1`, unknown wake sources) and not poweroff (too easy to
+   hit). New `device-samsung-gts7xl-console`: the same script as `/usr/libexec/gts7xl-powerkey`,
+   `gts7xl-powerkey.service` (static, `multi-user.target.wants` link, foreground, restart on
+   failure). Checked: service "watching /dev/input/event0"; `fb0/blank` and the touchscreen
+   `inhibited` writes work from the rootfs (one `dpu_encoder_helper_wait_for_irq` error on blank,
+   panel back after ~330 ms). **Not checked: a real button press** (needs the owner).
+4. **UFS spam.** `ufshcd_wb_curr_buff_threshold_check: dCurWriteBoosterBufferSize read failed -22`
+   (KERN_ERR, every 3-8 s, 42 lines in the first 200 s) flooded tty1. Not fixed at the source
+   (WriteBooster attribute read on this UFS; look at it with the UFS work). The console package sets
+   `kernel.printk = 3 4 1 3` (`/usr/lib/sysctl.d/60-gts7xl-console.conf`): only critical
+   messages reach the screen; dmesg and the journal keep everything.
+
+Also: `tools/flash.sh` logs image paths relative to the repo (or the file name) in NOTES.md
+instead of absolute paths. Runbook: `rootfs-on-userdata.md` (install `--add` list, sections 0,
+6, 9).
+
+Verified after `systemctl reboot` run as the user over SSH (polkit, no password): sudo with the
+password → root, `nmcli device wifi rescan` as the user OK, `bluetoothctl list` = 1 controller
+(stable address), `btmgmt info` = configured primary controller, `systemctl --failed` empty,
+`gts7xl-powerkey`, `bluetooth`, `NetworkManager` active, `kernel.printk` = 3 4 1 3.
+
+| apk (pmaports device r11) | sha256 (first 16) |
+|---|---|
+| `device-samsung-gts7xl-1-r11.apk` | `a67dd21bee664342` |
+| `device-samsung-gts7xl-bluetooth-1-r11.apk` | `962c2021262e6226` |
+| `device-samsung-gts7xl-console-1-r11.apk` | `0096b58dccf30b34` |
+| `device-samsung-gts7xl-polkit-1-r11.apk` | `8562974cb5ec2869` |
+| `device-samsung-gts7xl-sshd-keyonly-1-r11.apk` | `595e108194828b7d` |
+
+The console apk on the tablet is the second r11 build (unit made static); the other four on the
+tablet are from the first r11 build (same content, different apk timestamps).
