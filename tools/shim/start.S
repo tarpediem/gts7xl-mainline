@@ -12,6 +12,8 @@
  * https://github.com/Iamtianyuyang/steamos-tabs7 (boot/shim).
  *
  * Entered like a kernel: EL1 (or EL2), MMU and D-cache off, x0 = DTB.
+ * Position independent for any 4 KiB-aligned load address (adrp, -mcmodel=small);
+ * every Qualcomm ABL loads the kernel page-aligned.
  */
 	.section .head, "ax"
 	.global _start

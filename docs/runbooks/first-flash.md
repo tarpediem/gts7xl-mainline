@@ -24,6 +24,10 @@ So the image the ABL sees is as stock as possible:
 - `dtb` section = the stock recovery's DTB (4 FDTs, the first one `qcom,msm-id = <0x164 0x20001>`), byte for byte;
 - `recovery_dtbo` section = the stock recovery's overlays (entry 04 = `qcom,board-id = <8 6>`), byte for byte;
 - header fields = the stock boot image's; cmdline = ours;
+- end of the image (attempt A) = the shape of the Magisk-patched BOOT this bootloader already
+  boots: the 16 bytes `SEANDROIDENFORCE` right after the last section, an AVB footer whose
+  original size is the end of that trailer, and the stock recovery's vbmeta blob at its stock
+  offset (so One UI still verifies the recovery chain exactly as before);
 - kernel slot = `build/shim-Image`: a small program (`tools/shim/`) that carries our mainline
   `Image` and our mainline DTB. Its Image header announces what the stock kernel announces
   (`text_offset 0x80000`, an `image_size` covering all it uses).
@@ -62,6 +66,47 @@ sha256sum build/stock/recovery.img build/stock/vbmeta.img build/stock/boot-magis
 device: compare only the first bytes (`head -c <size of the stock file>` before `sha256sum`).
 If `recovery` or `vbmeta` differ from stock, stop: keep the device copies as the rollback
 images instead (save them under `build/device/`).
+
+### 1b. Does a log in RAM survive a reset? (pstore test, before any flash)
+
+Everything we can learn from a failed boot is read from ramoops (`0x9fa00000`, 1 MiB) by One UI
+afterwards (step 7). That only works if the reset in between keeps the RAM contents. Measure it
+now, on the untouched tablet. The test writes a text marker into the stock kernel's own log
+buffers; nothing on storage is written.
+
+```sh
+adb -s <serial> shell su -c 'ls -la /dev/pmsg0 /sys/fs/pstore; cat /proc/reset_reason 2>/dev/null'
+M=marker-$(date +%s); echo $M
+# keeps writing the marker (Android logs share the 256 KiB pmsg buffer and would push it out)
+adb -s <serial> shell su -c "while :; do echo $M > /dev/pmsg0; echo $M > /dev/kmsg; sleep 1; done"
+```
+
+**Test W, forced reset** (the exit from a hang, step 6): while the loop runs, hold
+**Vol Down + Power** about 7 s until the screen goes black, release. One UI boots. Then:
+
+```sh
+adb -s <serial> shell su -c 'ls -la /sys/fs/pstore; cat /proc/reset_reason 2>/dev/null'
+adb -s <serial> exec-out su -c 'cat /sys/fs/pstore/pmsg-ramoops-0'    | grep -a -c "$M"
+adb -s <serial> exec-out su -c 'cat /sys/fs/pstore/console-ramoops-0' | grep -a -c "$M"
+```
+
+**Test R, plain reboot**: new marker, same loop, then from another terminal
+`adb -s <serial> reboot`, and the same three commands.
+
+Write both results (the two counts, the reset reason) in `NOTES.md`.
+
+| Result | What it means for the flash |
+|---|---|
+| W: marker found | a warm reset keeps ramoops, and One UI decodes it. Our kernel reboots warm by itself after a panic or a stuck CPU (see step 5), so that log will be readable |
+| W: marker **not** found | One UI does not show the previous boot's log at all: step 7 cannot prove anything. Stop and tell the agent before flashing (ramoops layout or ECC to recheck) |
+| R: marker found / not found | tells whether the reset type the stock kernel picks for a normal reboot keeps RAM; one more data point, not a condition |
+
+Limit of test W: under One UI the key combo is caught by the stock power-key driver about
+6.7 s in, and it does a warm reset. Under our kernel nobody catches it, and the PMIC does its
+own **hard** reset about 1 s later (stage 2 of the Vol Down + Power reset is configured as a
+hard reset in the stock device tree); RAM is then powered off for a moment. So after a
+**forced** reset out of our kernel an empty pstore proves nothing. This is why step 6 says to
+wait for the kernel's own reboot first.
 
 ## 2. Download Mode
 
@@ -152,18 +197,35 @@ What the screen tells, in boot order:
 | Whole screen **magenta** | shim: its embedded mainline DTB is unusable |
 | Whole screen **cyan** | shim: no `/memory` in the bootloader's DTB |
 | **Green bar** across the top of the logo | the shim finished and jumped into the mainline kernel |
-| Green bar, then nothing changes, tablet reboots by itself or hangs | the kernel started and died before the display driver: read pstore (step 7) |
+| Green bar, then nothing changes, tablet reboots by itself or hangs | the kernel started and died before the display driver: **wait 60 s** for it to reboot by itself, then read pstore (step 7) |
 | Kernel text on the screen | mainline is running (`simple-framebuffer` + `console=tty0`) |
+| Kernel text, then the screen goes black after a few seconds | most likely the kernel switched the display clocks/power off once all drivers were loaded (nothing holds the display yet); Linux is still running: use the debug shell over USB. For the next image: `clocks`/`power-domains` on the simple-framebuffer node |
+| Tablet reboots to One UI by itself, 10-40 s after the green bar | a panic, an oops or a stuck CPU: the kernel rebooted warm on purpose, the log is in pstore (step 7) |
 | postmarketOS debug shell text on screen | the initramfs is up and waiting |
 
-A coloured screen or a hang never ends by itself: hold Vol Down + Power 7 s (step 6).
+A coloured screen (shim) never ends by itself: hold Vol Down + Power 7 s (step 6).
+
+A hang **after the green bar** usually does end by itself. The command line has
+`panic=5 oops=panic softlockup_panic=1 nmi_watchdog=panic reboot=warm`: an oops, or a CPU
+stuck for 20 s (10 s with interrupts off), becomes a panic, and 5 s later the kernel does a
+**warm** reset, which keeps the log in RAM. So with a frozen screen, wait a full minute
+before touching the keys; only then force the reset. What is not covered: all CPUs dead at
+once, or a hang before the kernel's timers run. The hardware watchdog is not armed by us
+(what this firmware does when it fires is not known yet).
 
 ### The debug shell over USB
 
 The initramfs sets up a USB network gadget (`18d1:d001`, NCM, plus a serial port), then the
 hook `00-gts7xl-usb-muic.sh` switches the tablet's USB data lines to the SoC (they go through
 the MAX77705 MUIC, which the bootloader leaves open), then it enters the debug shell
-(`pmos.debug-shell`). On the host:
+(`pmos.debug-shell`).
+
+The hook waits for the hardware: it polls once a second, for up to **30 s**, for the i2c bus
+of the MAX77705 and for the USB controller, and if the initramfs found no controller at its
+own (single) try, the hook creates and binds the gadget and starts the DHCP server itself.
+So the USB device can show up on the host as late as about 35 s after the kernel text
+appears, and the debug shell prompt on the screen only comes after the hook. Each step is
+logged with the prefix `gts7xl-usb-muic:` (in `dmesg`, so also in pstore). On the host:
 
 ```sh
 ip -br addr | grep 172.16.42            # the new usb interface gets 172.16.42.2 by DHCP
@@ -181,6 +243,9 @@ First things to save from the shell (copy the telnet output into `build/`):
 dmesg                                   # full kernel log
 cat /proc/cmdline; cat /proc/iomem
 dmesg | grep -iE "gts7xl-usb-muic|dwc3|ufs|rpmh|deferred"
+dmesg | grep -iE "PS_HOLD|wdt|watchdog|lockup|ramoops|pstore"
+cat /proc/sys/kernel/softlockup_panic /proc/sys/kernel/hardlockup_panic /sys/kernel/reboot/mode
+ls /sys/class/watchdog/ /sys/fs/pstore
 cat /sys/kernel/debug/devices_deferred
 ls /dev/disk/by-partlabel 2>/dev/null || cat /proc/partitions    # UFS seen?
 ```
@@ -188,13 +253,28 @@ ls /dev/disk/by-partlabel 2>/dev/null || cat /proc/partitions    # UFS seen?
 Nothing is mounted and nothing on UFS is written: without a root filesystem in USERDATA the
 initramfs has nowhere to go (`pmos_continue_boot` would stop with "boot partition not found").
 No USB device on the host does not mean Linux is down: check the screen, then pstore.
+To get the log of a boot that had no USB: type nothing (no input device), wait until the
+debug shell text is on the screen, note the time, then leave with step 6. The forced reset
+will probably lose the log (step 1b); write down what the screen showed instead.
+
+`dmesg` must show `PS_HOLD reset type set to warm (reboot=warm)` (kernel patch 0003: the PMIC
+is told once, at the power-key driver's probe, that the next reset is a warm one, because a
+panic restarts without going through the code that normally sets it). If the line is missing,
+a panic may reboot cold and lose its log.
 
 Write the result in `NOTES.md` under the flash entry (time to each event, exact screen text).
 
 ## 6. Back to One UI
 
-Hold **Vol Down + Power** about 7 s until the screen goes black, release everything.
-The tablet boots BOOT (One UI). This works from our Linux, from a hang and from Download Mode.
+From the debug shell, prefer `reboot` (telnet or serial): it is a warm reset and keeps the log.
+
+From a frozen screen after the green bar: first wait one minute for the kernel's own warm
+reboot (step 5).
+
+Otherwise hold **Vol Down + Power** about 7 s (up to 10 s from our kernel) until the screen
+goes black, release everything. The tablet boots BOOT (One UI). This works from our Linux,
+from a hang, from a coloured shim screen and from Download Mode. Out of our kernel this is a
+hard reset: RAM, and with it the log, is probably lost (step 1b).
 
 ## 7. Read the previous kernel log from One UI
 
@@ -208,9 +288,15 @@ adb -s <serial> exec-out su -c 'cat /sys/fs/pstore/dmesg-ramoops-0'   > build/ps
 adb -s <serial> shell su -c 'cat /proc/reset_reason /proc/reset_summary 2>/dev/null'
 ```
 
-`pstore-console` holding lines of a 7.3 kernel proves our kernel ran. An empty
-`/sys/fs/pstore` means nothing was recorded: the kernel never got as far as pstore
-(green bar seen or not tells whether the shim handed over).
+`pstore-console` holding lines of a 7.3 kernel proves our kernel ran. How to read an empty
+`/sys/fs/pstore` depends on how the tablet got back to One UI:
+
+- it rebooted **by itself** (warm reset): nothing was recorded, the kernel never got as far
+  as pstore (green bar seen or not tells whether the shim handed over);
+- the reset was **forced** with the keys: no conclusion, a hard reset loses RAM (step 1b).
+
+A panic log starts with `Kernel panic - not syncing:`; a stuck CPU shows as
+`watchdog: BUG: soft lockup` or `Watchdog detected hard LOCKUP` just before it.
 
 The stock kernel only decodes the region if our node has the same layout. The
 `ramoops@9fa00000` node of `sm8250-samsung-gts7xl.dts` copies the live tree (1 MiB, record,

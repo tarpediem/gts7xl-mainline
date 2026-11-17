@@ -78,9 +78,63 @@ Overlays carry no `qcom,msm-id`.
 - linux,cma
 - mailbox_mem: mailbox_region
 
-## 2026-11-17 — boot shim + observable DTS — not flashed
+## 2026-11-17 — pre-flash review fixes (I1 I2 I3, M1 M4 M6 M7) — not flashed
 
-Supersedes every earlier candidate (moved to `build/superseded/`; `boot-signed.img` is now only
+Supersedes the candidates of the entry below (same day; those must not be flashed).
+Review: `.superpowers/sdd/2026-11-17-phase0-preparation/shim-review.md`; details of the fixes in
+`shim-fixes-report.md` next to it.
+
+What changed:
+- **I1, a hang should leave a log.** cmdline + `oops=panic softlockup_panic=1 nmi_watchdog=panic reboot=warm`;
+  kernel config + `SOFTLOCKUP_DETECTOR`, `HARDLOCKUP_DETECTOR` (buddy), `DETECT_HUNG_TASK` (report only),
+  `WQ_WATCHDOG` (report only); kernel patch 0003 (linux a67de047d): with `reboot=warm` the power-key driver
+  writes the warm PS_HOLD reset type at probe, because a panic restarts without the reboot notifiers that
+  normally write it. Hardware watchdog: not armed (what the firmware does on a bite is not sourced).
+  Runbook step 1b: pstore survival test from One UI.
+- **I2, USB.** The hook polls up to 30 s for i2c@980000 and for the UDC, then creates/binds the gadget and
+  starts DHCP if the initramfs could not. I2C writes unchanged (0x25 only).
+- **I3, image shape.** `recovery-shim.img` now ends like the Magisk BOOT: `SEANDROIDENFORCE` after the last
+  section (offset 69984256), footer original_image_size 69984272; vbmeta blob and the rest of the footer
+  are the stock recovery's. `mkrecovery.py` refuses an image longer than the stock hashed size (72143376).
+
+Sources: linux `gts7xl` **a67de047d**; pmaports `gts7xl`: `linux-samsung-gts7xl-7.3.4-r3`
+(tarball + 3 patches, `pmbootstrap kconfig check` OK), `device-samsung-gts7xl-1-r5`.
+
+Candidates in `build/` (sha256, first 16):
+
+| File | sha256 | Use |
+|---|---|---|
+| `recovery-shim.img` | `76c90d3fd1b6f5f7` | RECOVERY, attempt A (stock vbmeta kept, Samsung trailer) |
+| `recovery-shim-signed.img` | `58593f15ebba2071` | RECOVERY, attempt B (test-key footer + vbmeta disabled) |
+| `shim-Image` | `d7f98cee2cfa273b` | kernel slot of both (two builds give the same bytes) |
+| `dtbs/sm8250-samsung-gts7xl.dtb` | `5b434caa6797d318` | mainline DTB inside the shim (unchanged) |
+| `vmlinuz` | `b840ac6ff8863e4b` | Image.gz of the package; its Image is `68855f7b826ca1ec` |
+| `initramfs` | `acf7ffe52f343e0f` | ramdisk of both (hook identical to the pmaports source) |
+| `boot-signed.img` | `271af153a011a2ff` | intermediate only |
+| `samsung-gts7xl.img` | `9344a705f7fc7452` | rootfs of the same install (not flashed in the first attempt) |
+
+Cmdline of both recovery images:
+
+    console=tty0 clk_ignore_unused pd_ignore_unused cpuidle.off=1 panic=5 oops=panic softlockup_panic=1 nmi_watchdog=panic reboot=warm pmos.debug-shell  pmos_boot_uuid=4f70aecd-ab64-4a8e-93a2-c3f137f5c944 pmos_root_uuid=cc8e08a2-3ebd-426d-b464-33dd6bb6957e pmos_rootfsopts=defaults
+
+Checked on `recovery-shim.img`: kernel = `shim-Image`; `dtb` and `recovery_dtbo` `cmp`-equal to the stock
+recovery's; footer differs from stock only in original_image_size; everything from the vbmeta offset
+(72146944) to the footer equal to stock; one `SEANDROIDENFORCE`. The Image contains the strings of patch 0003
+and of both lockup detectors.
+
+Build commands: as in the entry below (kernel `--force`, device package, zap + install with udiskie
+paused, export, `tools/build-recovery-shim.sh`); logs in `build/logs/`.
+
+Tests: `uv run --with pytest pytest tests -q` → 62 passed, 8 skipped (unicorn absent: skipped, no failure);
+with `--no-project --with unicorn` → 70 passed; `bash tests/test_flash.sh` → OK;
+`tools/flash.sh --dry-run --keep-vbmeta RECOVERY=build/recovery-shim.img` → `heimdall flash --RECOVERY … --no-reboot`.
+
+Not verified on hardware: that a warm reset keeps ramoops (runbook 1b measures it), that PSCI SYSTEM_RESET2
+plus the warm PS_HOLD type is honoured by this firmware, and that the ABL looks at the trailer at all.
+
+## 2026-11-17 — boot shim + observable DTS — not flashed (superseded)
+
+Superseded by the entry above. Supersedes every earlier candidate (moved to `build/superseded/`; `boot-signed.img` is now only
 an intermediate and must not be flashed).
 
 Why: on the Tab S7 11" the ABL refused every image with a mainline DTB and booted anything

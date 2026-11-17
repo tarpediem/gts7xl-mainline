@@ -6,7 +6,7 @@
 # Needs in BUILD_DIR: boot.img, vmlinuz, dtbs/sm8250-samsung-gts7xl.dtb (pmbootstrap export)
 # and stock/boot-stock.img, stock/recovery.img (stock T976B firmware).
 # Writes: shim-Image, boot-signed.img (intermediate, never flashed), and
-#   recovery-shim.img         stock AVB footer kept   -> flash with --keep-vbmeta (attempt A)
+#   recovery-shim.img         stock vbmeta blob kept, Samsung trailer -> flash with --keep-vbmeta (attempt A)
 #   recovery-shim-signed.img  test-key AVB footer     -> flash with the disabled vbmeta (attempt B)
 # Offline: nothing here talks to the tablet.
 set -euo pipefail
