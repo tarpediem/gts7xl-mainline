@@ -1117,7 +1117,7 @@ r18 on the tablet (kexec from r15, 19:31): `safety monitor: CC 450000 uA, CHGIN 
 Modules from `/usr/lib/modules/7.3.4-r18` (r17 directory removed, depmod run), hci0 and Wi-Fi
 (wlan0 192.168.100.111) up after kexec this time.
 
-**Pending: the B1 battery-current proof on a wall charger.** A logger runs on the tablet
+**B1 battery-current proof on a wall charger: PASSED** (19:38-19:45, owner swapped the cable). A logger runs on the tablet
 (`systemd-run --unit=b1-dcp sh /tmp/b1-dcp.sh`, log `/var/tmp/b1-dcp.log`): it waits up to 30 min
 for `[DCP]`, then logs auto / inhibit-charge / auto for 60 s each (battery current, voltage,
 input limit, BC_STATUS, CNFG_00/09, CHG_DTLS), then waits for the PC port again. Pass: battery
@@ -1182,3 +1182,18 @@ cooling device / thermal zones; GPU OPPs and speed bin not checked against the s
 pwrlevels (top stock level 0x22fce8c0 = 587 MHz); kmscon on tty1 must yield the DRM master
 to a compositor (logind seat / VT switch). Not flashed; BOOT/RECOVERY need the battery
 agent's next kernel with patch 0027 merged.
+
+B1 result (`/var/tmp/b1-dcp.log` on the tablet, 10 s samples):
+- 19:38:43 wall charger detected: BC_STATUS 0x8b (VBUS, CHGTYP DCP), usb_type `[DCP]`, input limit
+  1800000.
+- AUTO (60 s): battery current +435 to +477 mA (avg +441 mA, i.e. the 450 mA charge current),
+  4.04-4.05 V, CNFG_00 0x15, CHG_DTLS 0x1, "Charging".
+- inhibit-charge (60 s): battery current falls to +36 → 0 → -15 mA (avg +5 mA), CNFG_00 0x14,
+  CNFG_09 0x47 (CHG_EN 0, input limit reg 71 = 1800 mA), CHG_DTLS 0x8, "Not charging".
+- AUTO again (60 s): +437 to +473 mA (avg +445 mA).
+- Thermistor 27.9-28.2 C throughout.
+- Unplugged: usb_type unknown, input limit 475000 at once; PC port back: BC_STATUS 0x81 `[SDP]`,
+  475000.
+
+So the off switch (MODE 0x04 + CHG_EN 0) really stops battery current, the DCP limit applies only
+on a detected wall charger, and the limit falls back to 475 mA on unplug.
