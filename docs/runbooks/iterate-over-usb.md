@@ -48,8 +48,11 @@ What it does:
    run under kexec, and the mainline DTB's `/memory` is only a placeholder;
 3. pushes the decompressed Image, the patched DTB and the initramfs to `/tmp/kx` (RAM) with
    `tools/usbsh.py push` (one-file HTTP server here, busybox `wget` there, sha256 checked);
-4. `kexec -l /tmp/kx/Image --dtb=/tmp/kx/kexec.dtb --initrd=/tmp/kx/initramfs --reuse-cmdline`
-   (or `--command-line=…` / `--append=…`): kexec fills `/chosen` (bootargs, initrd range);
+4. `kexec -c -l /tmp/kx/Image --dtb=/tmp/kx/kexec.dtb --initrd=/tmp/kx/initramfs --reuse-cmdline`
+   (or `--command-line=…` / `--append=…`): kexec fills `/chosen` (bootargs, initrd range).
+   `-c` forces the kexec_load syscall: kexec-tools 2.0.32 otherwise picks kexec_file_load,
+   which on arm64 ignores `--dtb` and hands the new kernel the running tree (until r13 every
+   kexec silently booted the old DTB; harmless only while the DTS did not change);
    run with a 300 s usbsh timeout (it took more than 30 s once with a 50 MB Image), then
    checks `/sys/kernel/kexec_loaded` = 1;
 5. `kexec -e`, detached from the telnet session: `( trap '' HUP; exec setsid sh -c 'sleep 2;
@@ -80,6 +83,39 @@ TTBR0; the page before it is not mapped. (And the copied relocation code has no 
 Not a placement problem: kexec-tools only uses "System RAM" from `/proc/iomem`, the no-map
 holes are excluded. Fix: `machine_kexec()` `__nocfi`, as `swsusp_arch_resume()` already is
 (upstream master still has the bug). r12's Image has `ldr x8, [x19, #0x310]; blr x8` there.
+
+## Wi-Fi and Bluetooth (QCA6390, kernel r13 / device r9 on)
+
+The modules hook loads, after the touchscreen: `pwrseq_qcom_wcn` (QCA6390 PMU),
+`pci_pwrctrl_pwrseq` (the builtin PCIe controller defers until this is bound, then trains
+the link), `ath11k_pci`, `qrtr_mhi`, `hci_uart`. `gts7xl.nowireless` on the command line
+skips them (`gts7xl.nomodules` skips everything). Firmware: linux-firmware
+`ath11k/QCA6390/hw2.0/{amss,m3,board-2}.bin` and `qca/htbtfw20.tlv`, `qca/htnv20.bin`.
+
+    tools/usbsh.py run 'iw dev; ls /sys/class/bluetooth'
+    tools/usbsh.py run 'ip link set wlan0 up; iw dev wlan0 scan passive | grep -c "^BSS "'
+    # hci0 starts "unconfigured" (no BD address): give it a random one, then scan
+    tools/usbsh.py run 'a=$(od -An -N5 -tx1 /dev/urandom | tr -s " " ":" | sed "s/^://;s/:$//");
+        btmgmt -i 0 public-addr C2:$a; btmgmt -i 0 le on; btmgmt -i 0 power on;
+        btmgmt -i 0 find | grep -c dev_found'
+
+Do not paste scan output anywhere public: it has network names and addresses.
+
+### Stock Wi-Fi calibration (optional, local only)
+
+The chip reports board id 0xff, so ath11k uses the generic `qmi-board-id=255` entry of
+board-2.bin. The DTS asks for the variant `Samsung_gts7xl` first; to give it the stock
+board data (`bdwlan.elf` from the vendor partition, not redistributable):
+
+    tools/extract-qca6390-vendor.sh <AP_….tar.md5 of the stock firmware> build/firmware-vendor
+    tools/wlan-fw-overlay.py --board-2 /usr/lib/firmware/ath11k/QCA6390/hw2.0/board-2.bin.zst \
+        --bdf build/firmware-vendor/bdwlan.elf \
+        --name 'bus=pci,qmi-chip-id=0,qmi-board-id=255,variant=Samsung_gts7xl' \
+        -o build/wlan-overlay.cpio
+    tools/kexec-push.sh --overlay build/wlan-overlay.cpio
+
+The overlay is a plain cpio appended to the initramfs; its uncompressed `board-2.bin`
+is found before the package's `board-2.bin.zst`. Keep it in `build/` (ignored by git).
 
 ## Replace the touchscreen module
 

@@ -24,13 +24,17 @@ Status: early bring-up. Expect rough edges.
 - UFS storage.
 - USB networking (RNDIS/NCM) and the postmarketOS initramfs debug shell over USB
   (`telnet 172.16.42.1`). Tooling for kexec and module push over USB is in place
-  (`docs/runbooks/iterate-over-usb.md`). The first kexec attempt oopsed in the old
-  kernel (kCFI check in `machine_kexec()`, fixed in kernel r12); kexec from r12 is not yet
-  tested on the device.
+  (`docs/runbooks/iterate-over-usb.md`); kexec works from kernel r12 on.
+- Power key: a short press toggles the display and the touchscreen.
+- Wi-Fi (QCA6390 on PCIe, ath11k) and Bluetooth (QCA6390 on UART, hci_uart): the driver
+  probes, `wlan0` and `hci0` come up, scans work (tested in the debug shell with `iw` and
+  `btmgmt`; nothing connected yet). The generic linux-firmware board data is used; the
+  stock calibration can be added locally (`tools/wlan-fw-overlay.py`, see the runbook).
+  Bluetooth has no BD address yet (set one with `btmgmt public-addr` before powering on).
 
 ## What does not work yet
 
-- Wi-Fi and Bluetooth
+- Connecting to a network (no supplicant in the debug shell), the stock BD address
 - Battery and charging
 - GPU acceleration
 - Audio

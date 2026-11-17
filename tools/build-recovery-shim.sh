@@ -5,7 +5,7 @@
 #
 # Needs in BUILD_DIR: boot.img, vmlinuz, dtbs/sm8250-samsung-gts7xl.dtb (pmbootstrap export)
 # and stock/boot-stock.img, stock/recovery.img (stock T976B firmware).
-# Writes: shim-Image, boot-signed.img (intermediate, never flashed), and
+# Writes: shim-Image, boot-xz.img and boot-signed.img (intermediates, never flashed), and
 #   recovery-shim.img         stock vbmeta blob kept, Samsung trailer -> flash with --keep-vbmeta (attempt A)
 #   recovery-shim-signed.img  test-key AVB footer     -> flash with the disabled vbmeta (attempt B)
 # Offline: nothing here talks to the tablet.
@@ -21,8 +21,11 @@ done
 
 python3 "$tools/mkshim.py" --kernel "$build/vmlinuz" --dtb "$build/dtbs/sm8250-samsung-gts7xl.dtb" \
     -o "$build/shim-Image"
+# Same initramfs, recompressed as xz: the zstd one no longer fits before the stock vbmeta
+# blob since the QCA6390 firmware and modules went in (tools/xz_ramdisk.py).
+python3 "$tools/xz_ramdisk.py" "$build/boot.img" "$build/boot-xz.img"
 # Header fields of the stock boot image + the pmbootstrap cmdline (root/boot UUIDs).
-python3 "$tools/sign_boot.py" --stock "$build/stock/boot-stock.img" "$build/boot.img" "$build/boot-signed.img"
+python3 "$tools/sign_boot.py" --stock "$build/stock/boot-stock.img" "$build/boot-xz.img" "$build/boot-signed.img"
 # Kernel slot = shim; dtb and recovery_dtbo = the stock recovery's own, byte for byte.
 python3 "$tools/mkrecovery.py" --stock-recovery "$build/stock/recovery.img" --stock-dt \
     --kernel "$build/shim-Image" --stock-footer "$build/boot-signed.img" "$build/recovery-shim.img"

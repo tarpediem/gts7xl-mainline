@@ -68,7 +68,7 @@ def test_kexec_push_dry_run(tmp_path):
     assert r.returncode == 0, r.stderr
     out = r.stdout
     assert "pull 192.0.2.1:/sys/firmware/fdt" in out
-    assert "kexec -l /tmp/kx/Image --dtb=/tmp/kx/kexec.dtb --initrd=/tmp/kx/initramfs " \
+    assert "kexec -c -l /tmp/kx/Image --dtb=/tmp/kx/kexec.dtb --initrd=/tmp/kx/initramfs " \
            "--reuse-cmdline --append='gts7xl.nomodules'" in out
     assert "kexec -e" in out
 
@@ -168,7 +168,7 @@ def test_kexec_jump_detached(tmp_path):
     jump = [l for l in r.stdout.splitlines() if "kexec -e" in l][0]
     assert "exec setsid sh -c" in jump and "trap '' HUP" in jump
     assert jump.endswith("& true")                   # usbsh appends `; echo`; `&;` is a syntax error
-    assert "timeout 300 s): kexec -l" in r.stdout
+    assert "timeout 300 s): kexec -c -l" in r.stdout
 
 
 NATIVE = Path(__import__("os").environ.get("PMB_NATIVE", Path.home() / ".local/var/pmbootstrap/chroot_native"))
@@ -200,3 +200,17 @@ def test_kexec_jump_survives_the_session_under_busybox_ash(tmp_path):
             break
         time.sleep(0.1)
     assert (tmp_path / "jumped").read_text().strip() == "-e"
+
+
+def test_kexec_push_overlay_dry_run(tmp_path):
+    o = tmp_path / "ov.cpio"; o.write_bytes(b"y")
+    r = subprocess.run(["bash", str(TOOLS / "kexec-push.sh"), "--dry-run", "--overlay", str(o),
+                        *fake_artefacts(tmp_path)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert f"+ {o}" in r.stdout and "WORK/initramfs -> " in r.stdout
+
+
+def test_kexec_push_missing_overlay(tmp_path):
+    r = subprocess.run(["bash", str(TOOLS / "kexec-push.sh"), "--dry-run", "--overlay",
+                        str(tmp_path / "nope"), *fake_artefacts(tmp_path)], capture_output=True, text=True)
+    assert r.returncode == 1 and "missing" in r.stderr

@@ -3,13 +3,15 @@
 #
 # usage: tools/kexec-push.sh [--dry-run] [--no-exec] [--force] [--host IP] [--local-ip IP]
 #                            [--kernel FILE] [--dtb FILE] [--initramfs FILE]
-#                            [--cmdline STR | --append STR]
+#                            [--cmdline STR | --append STR] [--overlay CPIO]
 #
 #   --kernel     default build/vmlinuz (gzip Image from pmbootstrap export; sent decompressed)
 #   --dtb        default build/dtbs/sm8250-samsung-gts7xl.dtb
 #   --initramfs  default build/initramfs
 #   --cmdline    full command line for the new kernel; default: the running one (--reuse-cmdline)
 #   --append     added to the running command line (e.g. gts7xl.nomodules)
+#   --overlay    newc cpio appended to the initramfs (e.g. build/wlan-overlay.cpio from
+#                tools/wlan-fw-overlay.py: board data that must not go into a package)
 #   --no-exec    load only (kexec -l), do not jump; run `kexec -e` yourself
 #   --force      skip the check that the RUNNING kernel can kexec (r12+, build #13+)
 #   --dry-run    print every step, touch nothing (no connection to the tablet)
@@ -27,7 +29,7 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 tools=$root/tools
 dry=0 exec_=1 force=0 host=172.16.42.1 local_ip=172.16.42.2
 kernel=$root/build/vmlinuz dtb=$root/build/dtbs/sm8250-samsung-gts7xl.dtb initramfs=$root/build/initramfs
-cmdline="" append=""
+cmdline="" append="" overlay=""
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -41,13 +43,14 @@ while [ $# -gt 0 ]; do
 	--initramfs) initramfs=$2; shift ;;
 	--cmdline) cmdline=$2; shift ;;
 	--append) append=$2; shift ;;
+	--overlay) overlay=$2; shift ;;
 	-h|--help) sed -n '2,25p' "$0"; exit 0 ;;
 	*) echo "kexec-push.sh: unknown argument $1" >&2; exit 2 ;;
 	esac
 	shift
 done
 [ -n "$cmdline" ] && [ -n "$append" ] && { echo "kexec-push.sh: --cmdline and --append are exclusive" >&2; exit 2; }
-for f in "$kernel" "$dtb" "$initramfs"; do
+for f in "$kernel" "$dtb" "$initramfs" ${overlay:+"$overlay"}; do
 	[ -e "$f" ] || { echo "kexec-push.sh: missing $f" >&2; exit 1; }
 done
 
@@ -62,7 +65,10 @@ elif [ -n "$append" ]; then
 else
 	cmdarg="--reuse-cmdline"
 fi
-load="kexec -l /tmp/kx/Image --dtb=/tmp/kx/kexec.dtb --initrd=/tmp/kx/initramfs $cmdarg"
+# -c: the kexec_load syscall. kexec-tools 2.0.32 picks kexec_file_load when the kernel has
+# it, and on arm64 that one ignores --dtb and reuses the running tree (r13: the new DTB never
+# reached the new kernel).
+load="kexec -c -l /tmp/kx/Image --dtb=/tmp/kx/kexec.dtb --initrd=/tmp/kx/initramfs $cmdarg"
 # Detached from the telnet session: a plain `&` job is killed when usbsh closes the
 # connection. HUP is ignored from the fork on (inherited through exec, so there is no window
 # before setsid takes effect), then setsid leaves the session. `& true`: ash rejects `&;`
@@ -75,7 +81,9 @@ if [ "$dry" = 1 ]; then
 	step "[dry-run] pull $host:/sys/firmware/fdt -> WORK/running.fdt"
 	step "[dry-run] tools/kexec_dtb.py --new $dtb --running WORK/running.fdt -o WORK/kexec.dtb"
 	step "[dry-run] decompress $kernel -> WORK/Image"
-	step "[dry-run] push WORK/Image WORK/kexec.dtb $initramfs -> $host:/tmp/kx/"
+	[ -n "$overlay" ] && step "[dry-run] WORK/initramfs = $initramfs + $overlay"
+	if [ -n "$overlay" ]; then ird=WORK/initramfs; else ird=$initramfs; fi
+	step "[dry-run] push WORK/Image WORK/kexec.dtb $ird -> $host:/tmp/kx/"
 	step "[dry-run] run (timeout 300 s): $load"
 	step "[dry-run] check: /sys/kernel/kexec_loaded = 1"
 	[ "$exec_" = 1 ] && step "[dry-run] run: $jump"
@@ -105,6 +113,11 @@ step "push to /tmp/kx"
 usbsh run "mkdir -p /tmp/kx && command -v kexec" > /dev/null || { echo "kexec-push.sh: no kexec on the tablet" >&2; exit 1; }
 usbsh push "$work/Image" /tmp/kx/Image
 usbsh push "$work/kexec.dtb" /tmp/kx/kexec.dtb
+if [ -n "$overlay" ]; then
+	# The kernel unpacks concatenated cpio archives (each may be compressed) in order.
+	cat "$initramfs" "$overlay" > "$work/initramfs"
+	initramfs=$work/initramfs
+fi
 usbsh push "$initramfs" /tmp/kx/initramfs
 step "kexec -l"
 usbsh --timeout 300 run "$load"

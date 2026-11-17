@@ -595,3 +595,74 @@ Flash (owner present, Download Mode): `tools/flash.sh --keep-vbmeta RECOVERY=bui
   boots with 8 CPUs, panel (TCON ready 334 ms), msm fb0, touch module, USB debug shell back. No reflash needed
   for kernel/DTB iterations from now on.
 - Seen once on display-off: `dpu_encoder_helper_wait_for_irq *ERROR* encoder is disabled` (harmless so far).
+
+## 2026-11-17 — r13: QCA6390 Wi-Fi and Bluetooth (kexec, not flashed)
+
+Chip: QCA6390 (stock DT is "converged" for qca6390/qca6490; the vendor partition only has
+`firmware/qca6390/` and the PCI id is `17cb:1101`). Stock wiring, from `reference/live/live.dts`:
+supplies aon/dig S6A (950-952 mV), io S4A (1.8 V), rfa1 S5A (2.04 V), rfa2 S8C (1.35 V),
+antenna switch L5C (1.8 V, no load vote); wlan-en GPIO 90, bt-en GPIO 76, sw-ctrl GPIO 124;
+Wi-Fi on PCIe0 (perst 79, wake 81, PHY 0.88/1.2 V = L5A/L9A); BT on QUP SE6 = `uart6`
+(GPIO 16-19, stock active pin biases copied).
+
+- linux **e2ad98634** (patch 0019): `qcom,qca6390-pmu` node + `regulators-1` (PM8150L) with
+  S8C and L5C; S6A 952 mV and S8C 1352 mV (stock 950/1350 are off the FTSMPS/HFSMPS grid,
+  `tests/test_dts_regulators.py`), L5C always on; `&pcie0`, `&pcie0_phy`, `wifi@0`
+  (`pci17cb,1101`, `qcom,calibration-variant = "Samsung_gts7xl"`), `&uart6` + `bluetooth`
+  (`qcom,qca6390-bt`), alias serial0. `dtbs_check`: only the old simple-framebuffer warning.
+- Kernel config: `CONFIG_BT_LE=y` (+ `BT_LE_L2CAP_ECRED`); without it every discovery that
+  includes LE is rejected (status 0x0b). Everything else was already in the sm8250 config
+  (ATH11K_PCI, MHI, QRTR_MHI, PCI_PWRCTRL_PWRSEQ, POWER_SEQUENCING_QCOM_WCN, BT_HCIUART_QCA, all =m;
+  PCIE_QCOM is bool, builtin).
+- device r9: depends on linux-firmware-ath11k, linux-firmware-qca, iw, bluez-btmgmt; the
+  QCA6390 firmware (5 `.zst` files, ~1.9 MB), `iw`, `btmgmt` and the modules go into the
+  initramfs; `pwrseq_qcom_wcn`, `pci_pwrctrl_pwrseq`, `ath11k_pci`, `hci_uart` blacklisted for
+  udev there; the hook loads them after the touchscreen (`gts7xl.nowireless` skips them).
+  The builtin PCIe controller defers (pwrctrl not bound) until the hook loads the pwrctrl
+  driver, then trains the link.
+
+**kexec bug found on the way:** kexec-tools 2.0.32 defaults to kexec_file_load when the kernel
+has it; on arm64 that ignores `--dtb` and reuses the running tree. The first r13 kexec booted
+the new kernel with the r12 DTB (no PCIe, no uart6). `kexec-push.sh` now passes `-c`
+(kexec_load). Earlier kexec tests (r12 → r12) used the same DTB and could not show it.
+
+Result (kexec from r12/r13 debug shell, xz and zstd initramfs both tried):
+- `qcom-pcie 1c00000.pcie: PCIe Gen.2 x1 link up`, `[17cb:1101]`, `ath11k_pci: qca6390 hw2.0`,
+  `chip_id 0x0 chip_family 0xb board_id 0xff`, fw 0x10121492 (linux-firmware), `wlan0` present.
+  Passive scan (`iw dev wlan0 scan passive`, no connection): 16, 25 and 18 BSS on three boots
+  (2.4 and 5 GHz). Only counts were looked at.
+- hci_uart: `QCA SOC Version 0x400a0200`, `htbtfw20.tlv` + `htnv20.bin` downloaded, setup OK.
+  hci0 is **unconfigured** (no BD address: the stock one lives in EFS); with a random one set by
+  `btmgmt public-addr` and LE on, `btmgmt find`: 6 devices (BR/EDR-only find before BT_LE: 2).
+- Board data: generic `bus=pci,qmi-chip-id=0,qmi-board-id=255` works. The stock `bdwlan.elf`
+  (= `bdwlan.e05`, ELF) was also booted through `tools/wlan-fw-overlay.py` (variant
+  `Samsung_gts7xl` added to board-2.bin, appended cpio, `kexec-push.sh --overlay`): the loader
+  took the overlay's plain board-2.bin (firmware_class dyndbg), wlan0 up, scan OK. Which entry
+  ath11k picked is not logged without ATH11K_DEBUG (the variant name is tried first).
+  Distribution: Samsung/Qualcomm blobs never go into a package or git; each owner extracts them
+  from the stock firmware package (`tools/extract-qca6390-vendor.sh`: super → vendor → debugfs,
+  offline) into `build/` and builds the overlay locally. Nothing was mounted on the tablet except
+  `apnhlos` read-only (no Wi-Fi files there).
+
+RECOVERY size: with the wireless files the zstd initramfs (19.0 MB) no longer fits before the
+stock vbmeta blob (overlap 2.6 MB). pmbootstrap's `lzma` (Go xz) gives 17.2 MB, still too big.
+`tools/xz_ramdisk.py` recompresses the same cpio with `xz --check=crc32
+--lzma2=preset=9e,dict=32MiB` (15.2 MB, deterministic) for the RECOVERY image only
+(`build-recovery-shim.sh`); margin left before the vbmeta blob: 1.16 MB. That xz initramfs was
+booted by kexec (unpacks, hooks and wireless OK). The package keeps zstd.
+
+Sources: pmaports d5d84ce29 (`linux-samsung-gts7xl-7.3.4-r13`), aaa55ae63
+(`device-samsung-gts7xl-1-r9`). Tests: 135 passed, `test_flash.sh` OK.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` (copy: `build/archive/recovery-shim-r13-b7c6df10.img`) | `b7c6df1031b0de52` |
+| `build/recovery-shim-signed.img` | `6c9f7f67ef228f7f` |
+| `build/shim-Image` | `d8ee2a1ccd9ffa6f` |
+| `build/vmlinuz` (kexec payload) | `745d031b738190ca` |
+| `build/initramfs` (kexec payload, zstd) | `45b29c004c16c0d0` |
+| `build/dtbs/sm8250-samsung-gts7xl.dtb` | `496b84691d6272cc` |
+
+Not flashed. The tablet runs r13 by kexec (xz initramfs test, no overlay, on the last boot).
+Next: BD address from EFS (read-only) into the DT or a hook, regulatory/country, a
+supplicant for a real connection test, suspend.

@@ -29,7 +29,8 @@ class Rig:
         self._tool("pkill", f'echo "pkill $*" >> "{self.log}"')
         self._tool("buffyboard", f'echo buffyboard >> "{self.log}"')
         self.env = {"PATH": f"{self.bin}:/usr/bin:/bin", "GTS7XL_CMDLINE": str(self.cmdline),
-                    "GTS7XL_WAIT": "3", "GTS7XL_POLL": "0.05", "GTS7XL_SETTLE": "0"}
+                    "GTS7XL_WAIT": "3", "GTS7XL_POLL": "0.05", "GTS7XL_SETTLE": "0",
+                    "GTS7XL_WIRELESS_MODULES": ""}
 
     def _tool(self, name, body):
         p = self.bin / name
@@ -84,3 +85,47 @@ def test_modprobe_failure_is_not_fatal(tmp_path):
     rig = Rig(tmp_path, modprobe_rc=1).run()
     assert rig.res.returncode == 0
     assert rig.calls() == ["modprobe stmfts1b"]
+
+
+WIRELESS = ["pwrseq_qcom_wcn", "pci_pwrctrl_pwrseq", "ath11k_pci", "qrtr_mhi", "hci_uart"]
+
+
+def test_default_wireless_modules_in_power_up_order(tmp_path):
+    rig = Rig(tmp_path)
+    del rig.env["GTS7XL_WIRELESS_MODULES"]
+    rig.run()
+    assert rig.calls() == ["modprobe stmfts1b"] + [f"modprobe {m}" for m in WIRELESS]
+
+
+def test_wireless_after_buffyboard_restart(tmp_path):
+    rig = Rig(tmp_path, buffyboard=True).run(GTS7XL_WIRELESS_MODULES="ath11k_pci hci_uart")
+    assert rig.calls(settle=2.5) == ["modprobe stmfts1b", "pkill buffyboard", "buffyboard",
+                                     "modprobe ath11k_pci", "modprobe hci_uart"]
+
+
+def test_nowireless_on_cmdline(tmp_path):
+    rig = Rig(tmp_path)
+    rig.cmdline.write_text("console=tty0 gts7xl.nowireless pmos.debug-shell\n")
+    rig.run(GTS7XL_WIRELESS_MODULES="ath11k_pci hci_uart")
+    assert rig.calls() == ["modprobe stmfts1b"]
+
+
+def test_nomodules_skips_wireless_too(tmp_path):
+    rig = Rig(tmp_path)
+    rig.cmdline.write_text("console=tty0 gts7xl.nomodules pmos.debug-shell\n")
+    rig.run(GTS7XL_WIRELESS_MODULES="ath11k_pci hci_uart")
+    assert rig.calls() == []
+
+
+def test_initramfs_lists_and_blacklists_wireless():
+    pkg = HOOK.parent
+    mods = (pkg / "30-gts7xl.modules").read_text().split()
+    conf = (pkg / "initramfs-modprobe.conf").read_text()
+    for m in WIRELESS:
+        assert m in [x.replace("-", "_") for x in mods], m
+    for m in ["pwrseq_qcom_wcn", "pci_pwrctrl_pwrseq", "ath11k_pci", "hci_uart"]:
+        assert f"blacklist {m}" in conf
+    files = (pkg / "30-gts7xl.files").read_text()
+    for fw in ["ath11k/QCA6390/hw2.0/amss.bin", "ath11k/QCA6390/hw2.0/m3.bin",
+               "ath11k/QCA6390/hw2.0/board-2.bin", "qca/htbtfw20.tlv", "qca/htnv20.bin"]:
+        assert f"/lib/firmware/{fw}.zst" in files
