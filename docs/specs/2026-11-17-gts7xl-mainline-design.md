@@ -63,6 +63,13 @@ can still progress headless over SSH.
 
 Phases 5-8 get their own design once phase 4 is reached.
 
+Option to decide at the start of phase 5 (raised 2026-11-17): add a Steam
+gaming mode. Either SteamOS ARM as an alternative userspace (prior art for the
+SM8250 Tab S7 11": github.com/Iamtianyuyang/steamos-tabs7), or — preferred so
+far — a gamescope + Steam Big Picture session launched from the Omarchy menu
+on Arch Linux ARM, with FEX + Proton for x86 games and Turnip (Mesa Vulkan,
+Adreno 650). The kernel/DT work of phases 1-4 is the same either way.
+
 ## Phase 1 design: boot chain
 
 Requirements of the Samsung ABL (learned during the Droidian attempt):
