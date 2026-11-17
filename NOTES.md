@@ -1242,3 +1242,20 @@ Tests: 205 passed, `test_flash.sh` OK. Flash when the tablet is in Download Mode
 
     printf 'FLASH\n' | FLASH_SSH="ssh localhost" tools/flash.sh --pit build/gts7xl.pit --keep-vbmeta \
         BOOT=build/archive/boot-shim-r19-671d2d87.img
+
+## 2026-11-17T20:04:04+07:00 flash
+- BOOT: 671d2d873114917849007942f0b8a00ffd619b6e370afb252c9174ff1de19897 build/archive/boot-shim-r19-671d2d87.img
+
+## 2026-11-17 — Hyprland on pmOS: hardware validation (userspace only)
+
+`device-samsung-gts7xl-hyprland` (pmaports 537abe4f4, device r13): greetd on tty1 (autologin of
+the first regular user in the video group, tuigreet after logout), kmsconvt@tty1 disabled,
+getty on tty2+ (Ctrl+Alt+F2). Defaults seeded into ~/.config by `gts7xl-hyprland`.
+Hyprland 0.54.3 (Alpine): DSI-1 2800x1752@120, scale 2 (1400x876), freedreno via GBM,
+touchscreen bound to DSI-1 (owner: "ça marche bien"), BT keyboard seen (layout us, mod ALT: the
+keyboard is QWERTY without a Super key), `misc:disable_hyprland_guiutils_check` (not packaged
+in Alpine). Power key: `gts7xl-hypr-dpms` toggles DPMS (script tested off/on); physical press
+under Hyprland not yet confirmed. No sound card, no accelerometer. Screenshot:
+`build/gui/hyprland-desktop.png` (local only: shows the network name). grim from an SSH session
+hung once while the panel was idle; with the session active it works.
+Next target: Omarchy aarch64, design in `docs/omarchy-aarch64-design.md`.
