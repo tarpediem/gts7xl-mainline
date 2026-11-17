@@ -900,7 +900,11 @@ password → root, `nmcli device wifi rescan` as the user OK, `bluetoothctl list
 The console apk on the tablet is the second r11 build (unit made static); the other four on the
 tablet are from the first r11 build (same content, different apk timestamps).
 
-## 2026-11-17 — r16: battery and charging (MAX77705 charger + fuel gauge), built, not flashed
+## 2026-11-17 — r16: battery and charging (MAX77705 charger + fuel gauge), built, not flashed (superseded by r17)
+
+r16 on hardware (kexec): the MFD refused the chip ("Rev.0x2 is not tested"), no power supply,
+and every rootfs module failed (BTF of another build). The temperature remark in the table
+below is wrong: see r17.
 
 Kernel `linux-samsung-gts7xl-7.3.4-r15` (uname `#16`), linux `gts7xl` e46430cdb, 0d11871b2,
 4339a19be = aport patches 0021-0023. Config: `MFD_MAX77705`, `CHARGER_MAX77705`,
@@ -947,7 +951,7 @@ capture) and the vendor kernel `kernel_samsung_sm8250` (droidian-gts7xl, 97e4a5b
 | SW charging timer | USB 10 h, TA 5 h, HV 3 h | live.dts:34431 `usb_charging_total_time` 36000 s | **10 h** of charging since plug-in, then off until unplugged |
 | Restart threshold / prequal | disabled / disabled | chg.c:1012 | same (upstream) |
 | Battery temperature, cold | stop < 0.0 C, recover 2.0 C | live.dts:34392-34393 | stop < 0 C, recover >= 2 C |
-| Battery temperature, hot | swelling: stop >= 42.0 C, recover 40.0 C (stop >= 50 C) | live.dts:34442-34443, :34390 | **stop >= 41 C, recover <= 39 C** (1 C margin: mainline 100k NTC table reads ~0.5 C low near 42 C vs the stock table live.dts:34363) |
+| Battery temperature, hot | swelling: stop >= 42.0 C, recover 40.0 C (stop >= 50 C) | live.dts:34442-34443, :34390 | **stop >= 41 C, recover <= 39 C** (WRONG, see r17: the mainline table reads ~1 C HIGH, so this is ~40.1 C real; the cold stop at 0 C was ~-1.3 C real) |
 | Thermistor | PM8150L ADC5 0x4d, ratiometric, 200 us settle | live.dts:34501 io-channels, :5138 | same channel, mainline 100K_PU table |
 | Watchdog | enabled, kicked by sec-battery | chg.c:1102 | enabled, kicked every 10 s |
 | BAT-to-SYS OCP | 6200 mA (CNFG_05 0xf) | live.dts:34435 | 4800 mA (upstream, lower) |
@@ -978,3 +982,115 @@ PCA9468, drivers built in); `test_dts_gpi.py` i2c0 guard updated. 193 passed wit
 
 Both images carry the r15 cmdline byte for byte (`pmos_boot_uuid=1f14fc28-…`,
 `pmos_root_uuid=793aa611-…`). Not flashed.
+
+## 2026-11-17 — r17: charging that really stops, 80 % cap, own module directory (kexec-tested, not flashed)
+
+Kernel `linux-samsung-gts7xl-7.3.4-r17`, release **7.3.4-r17**, uname `#18`. linux `gts7xl`:
+05a0bb6d2 (MFD), f38b6835f (review fixes), 706c794ea (DTS 2 C), 31f00ec57 (capacity cap) =
+aport patches 0024-0027.
+
+What changed since r16:
+1. **MFD accepts this chip.** The tablet's MAX77705 reads PMICID1 0x15, PMICREV 0x02; the vendor
+   driver lists it as {0x15, 2} "MD15 PASS2" (logical PASS5, `drivers/mfd/max77705.c:55-66`) and
+   reads the charger interrupt the same way as PASS2-4 (`max77705-irq.c:238-249`). Only that pair is
+   added to PASS3; the charger and fuel gauge code do not depend on the revision.
+2. **Module directory per package revision.** `DEBUG_INFO_BTF_MODULES` ties modules to the exact
+   vmlinux, so under r16 every r14 module in `/lib/modules/7.3.4` failed ("failed to validate
+   module … BTF: -22": nftables, zram, Bluetooth, fuse). The aport now builds with
+   `LOCALVERSION=-r$pkgrel`: r17 is `7.3.4-r17` and its modules live in `/lib/modules/7.3.4-r17`,
+   next to r15/r14's `7.3.4`, which stays untouched (the r15 BOOT/RECOVERY keep working).
+   The package's `modules.alias` is empty (depmod at build time does not read the .ko.zst):
+   **run `depmod -a <release>` after copying modules by hand**; apk installs run the trigger.
+3. **Safety review fixes** (independent review of r16, `scratchpad/battery-review-r16.md`):
+   - B1: off = CNFG_00 MODE 0x05 → 0x04 (vendor method) **and** CHG_EN 0; on = CHG_EN 1 + MODE 0x05.
+     The charger starts off and the monitor turns it on after its first check.
+   - S1/S2: the watchdog is kicked only from a read-back safe state (off, or on with every limit
+     verified); a watchdog expiry forces off first, limits are checked, the kick comes last.
+   - S3: CV/CC/CHGIN targets are encoded from DT, written and read back at probe (mismatch = probe
+     fails with the charger off); the monitor compares against the targets.
+   - S4: `alert-celsius = <2 41>`: the mainline 100k table reads this thermistor ~1 C high
+     between 0 and 45 C against the stock table, so the window is ~0.8 C to ~40.1 C real
+     (stock: stop below 0 C, swelling block 42 C).
+   - S5: AICL handler stops at 100 mA (reg 3), bounded loop, under the lock (it could wrap to 3.2 A).
+   - S7: a register or fuel-gauge read error blocks charging (BLOCK_IO) and leaves the 10 h timer
+     as it is; status/charge_type return read errors.
+   - S9: `safety_ready` set/checked under the lock, self-requeue only while set, chgin_work flushed:
+     nothing re-enables charging after unbind.
+   - Also: WDTEN re-enabled if found cleared; "limits rewritten" counted in the log.
+   - S6 (documented): the USB-C firmware's AutoIBUS can raise CHGIN_LIM; the monitor rewrites it
+     within 10 s (count in dmesg "rewriting them (N so far)"). Not seen during the test.
+   - S8 (documented): if the MFD or charger never probes, nothing touches CC/CV/MODE/watchdog; the
+     previous owner's settings stay. Before leaving it plugged in, check dmesg for
+     "safety monitor:".
+4. **80 % cap (owner request).** The monitor reads the fuel-gauge capacity every 10 s: stop at
+   `charge_control_end_threshold` (default 80), resume below `charge_control_start_threshold`
+   (default 75), same off path; no fuel gauge or a read error = no charging. Both writable
+   (start < end <= 100), plus `charge_behaviour` auto / inhibit-charge.
+5. Fuel gauge: upstream binds `maxim,max77705-battery` through `simple-mfd-i2c` (FG and hwmon
+   cells, client 0x36); the max17042 i2c fallback (patch 0021) is unused here but harmless.
+
+Updated safety table (only the rows that changed from r16):
+
+| Parameter | Stock | Ours r17 |
+|---|---|---|
+| Battery temperature, cold | stop < 0.0 C, recover 2.0 C (live.dts:34392-34393) | stop < 2 C, recover >= 4 C on the mainline table (~0.8 / ~2.9 C real) |
+| Battery temperature, hot | swelling block 42.0 C, recover 40.0 C (live.dts:34442-34443) | stop >= 41 C, recover <= 39 C (~40.1 / ~38.2 C real) |
+| Charger off switch | CNFG_00 MODE 0x05 → 0x04 (vendor `max77705_charger.c:385`, 1558-1720) | MODE 0x04 + CHG_EN 0, read back |
+| Watchdog | on, kicked every ~10 s | on, kicked every 10 s only from a verified state |
+| Capacity window | none (charges to 100 %) | stop at 80 %, resume < 75 % (tunable) |
+
+### Hardware test (kexec from r15, 2026-11-17 19:04-19:18, USB to the host)
+
+Procedure (r15 untouched): copy `usr/lib/modules/7.3.4-r17` from the apk to the rootfs
+(`/usr/lib/modules/7.3.4-r17`, root-owned) and `depmod -a 7.3.4-r17`; copy Image (decompressed),
+`kexec_dtb.py` DTB (memory from `/sys/firmware/fdt`) and initramfs to `/tmp`; `kexec -c -l …
+--reuse-cmdline`; `systemd-run --on-active=2 systemctl kexec` (clean shutdown). Back:
+`systemd-run --on-active=2 systemctl reboot` → r15 from BOOT.
+
+Results on r17:
+- `max77705 0-0066: PMIC ID 0x15, revision 0x2`; `safety monitor: CC 450000 uA, CHGIN 475000 uA,
+  CV reg 0xb, battery 2..41 C, timer 36000 s, capacity 75..80 %`.
+- Registers (single-byte reads of the bound charger, `i2cget -f`, read only): CNFG_02 0x49
+  (CC reg 9 = 450 mA), CNFG_04 0x0b (4.27 V), CNFG_09 0x92 (CHG_EN 1, CHGIN 18 = 475 mA), CNFG_00
+  0x15 (WDTEN, MODE 5). Thermistor 27.4-27.6 C, fuel gauge 28.0 C (stale), 4.01 V, 71-72 %,
+  cycle count 1256, full charge 8.83 Ah (design 9.385 Ah in the FG).
+- **B1 off switch:** `charge_behaviour=inhibit-charge`, the 80 % cap (end set to 70 with 71 %) and
+  a driver unbind all give CNFG_00 0x14, CNFG_09 0x12, CHG_DTLS 0x1 (CC) → **0x8 (charger off)**,
+  status "Not charging"; back to 0x15/0x92/CHG_DTLS 0x1 on auto, on resume below start, and on
+  rebind. **Battery current did not change** (-260 to -300 mA in both states): on the host port the
+  475 mA input is below the system draw (cpuidle off, screen on or blanked), so the charger was in
+  supplement mode and never pushed current into the battery. The current-based check needs a
+  source above the system draw with the same 475 mA input cap, i.e. it cannot show a difference
+  with this limit; the register state (the vendor's own off state) is the evidence.
+- Capacity hysteresis: start 60 / end 80 at 71 % stays off (not below start); start 75 → resumes.
+- Rebind: first check finds no fuel gauge yet → off (BLOCK_IO), next check on.
+- Interrupts: spmi-gpio 10 (max77705), chgin-irq, aicl-irq all 0 (no storm).
+- Rootfs modules: after `depmod` 38-40 modules, Bluetooth hci0 back, nftables OK;
+  `postmarketos-zram-swap` fails (no zram module in any of our builds, r14 included).
+- Not tested: a cable plug/unplug (the cable is the SSH link), a watchdog expiry, temperatures
+  outside the window.
+- Back on r15: Wi-Fi connected, hci0, no failed unit.
+
+Rootfs change: `/usr/lib/modules/7.3.4-r17` added (root-owned, with depmod output), not apk-managed;
+`/usr/lib/modules/7.3.4` untouched, so RECOVERY/BOOT r15 still find their modules. To remove:
+`sudo rm -rf /usr/lib/modules/7.3.4-r17`. Before flashing r17 as BOOT, either keep that directory
+or install `linux-samsung-gts7xl-7.3.4-r17.apk` in the rootfs (it ships the same directory; apk
+then also replaces the r14 package's `/lib/modules/7.3.4`, which the r15 RECOVERY fallback needs:
+**do not apk-upgrade the kernel while RECOVERY is r15**, or keep a copy of `7.3.4`).
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/archive/boot-shim-r17-1f69460a.img` (BOOT) | `1f69460ab8f1f4f1` |
+| `build/archive/recovery-shim-r17-d34a442c.img` (RECOVERY) | `d34a442c6377d83f` |
+| `build/shim-Image` | `ff15848f2301ed8e` |
+| `build/dtbs/sm8250-samsung-gts7xl.dtb` | `7d754d19db599c14` |
+| kexec Image (decompressed vmlinuz) | `72e22c7578686174` |
+| `build/initramfs` | `df8844ac0fc8c43b` |
+
+Same cmdline (UUIDs) as r15, checked. Not flashed.
+
+    tools/flash.sh --keep-vbmeta --pit build/gts7xl.pit BOOT=build/archive/boot-shim-r17-1f69460a.img
+
+Tests: 201 passed (+ `tests/test_kernel_charger.py`); `test_modules_hook.py::
+test_wireless_after_buffyboard_restart` failed once in the full run under load and passed alone
+(known flaky since r14); `test_flash.sh` OK.
