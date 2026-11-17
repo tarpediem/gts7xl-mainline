@@ -1,0 +1,11 @@
+[Unit]
+Description=gts7xl: first-boot steps of the Omarchy image (firewall)
+After=network-pre.target
+ConditionPathExists=/usr/lib/gts7xl/gts7xl-firstboot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/gts7xl/gts7xl-firstboot
+
+[Install]
+WantedBy=multi-user.target

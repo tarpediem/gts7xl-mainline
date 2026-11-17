@@ -1,0 +1,10 @@
+#!/bin/sh
+# Show or hide squeekboard (on-screen keyboard): gts7xl-osk [show|hide|toggle]
+o="sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0"
+case ${1:-toggle} in
+show) v=true ;;
+hide) v=false ;;
+*) cur=$(busctl --user get-property $o Visible 2>/dev/null | cut -d' ' -f2)
+   [ "$cur" = true ] && v=false || v=true ;;
+esac
+exec busctl --user call $o SetVisible b "$v"

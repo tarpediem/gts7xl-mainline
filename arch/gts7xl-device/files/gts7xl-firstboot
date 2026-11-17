@@ -1,0 +1,11 @@
+#!/bin/bash
+# First boot of the Omarchy image on the gts7xl: what could not run in the qemu-user build.
+# - Omarchy's firewall setup (ufw needs the real kernel), with SSH allowed first.
+set -u
+log() { echo "gts7xl-firstboot: $*"; }
+ufw allow ssh || log "ufw allow ssh failed"
+bash /usr/share/omarchy/install/config/firewall.sh || log "Omarchy firewall.sh failed"
+ufw allow ssh
+ufw --force enable || log "ufw enable failed"
+systemctl disable gts7xl-firstboot.service
+log done

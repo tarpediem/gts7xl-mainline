@@ -1,4 +1,4 @@
-# Omarchy aarch64 on the gts7xl: design (not started, nothing written to the tablet)
+# Omarchy aarch64 on the gts7xl: design and build (image built, USERDATA not written)
 
 Goal: replace the postmarketOS root filesystem on USERDATA with an Omarchy (Arch Linux ARM
 based) root filesystem, keeping our boot chain (ABL → boot shim → our kernel r19 + the pmOS
@@ -133,3 +133,48 @@ onto a freshly written r15 image).
 3. Backup of the pmOS rootfs (tablet lock, read only).
 4. Owner go → write USERDATA, first boot, validate (GPU, touch, BT keyboard, Wi-Fi, charger
    line in dmesg, power key), screenshots to `build/gui/`.
+
+## 8. Decisions (owner, 2026-11-17) and what the build does
+
+- v1 = ext4, no LUKS, no snapshots. **Phase 2: LUKS** with an on-screen keyboard in the
+  initramfs (unl0kr, buffybox family): the BT keyboard is not available that early.
+- Text consoles: kmscon (us layout, JetBrainsMono Nerd Font 20) on tty2+ (`autovt@` →
+  `kmsconvt@`); SDDM autologin into the Omarchy session on tty1.
+- English (`LANG=en_US.UTF-8`), us keyboard; the BT keyboard's left Alt acts as Super
+  (`kb_options = altwin:swap_lalt_lwin` on that device only) so Omarchy's Super bindings work.
+- Kernel: our `linux-gts7xl` package (arch/linux-gts7xl), Arch kernels in `IgnorePkg`. It
+  ships the modules and the matching BOOT image (built on the host by
+  `tools/build-recovery-shim.sh`); its pacman hook `90-gts7xl-boot.hook` runs
+  `gts7xl-write-boot`, which writes BOOT from the tablet (sha256 check, Android header check,
+  backup of the old BOOT in /var/lib/gts7xl, read-back, restore on mismatch). **Dry run
+  unless `WRITE_BOOT=yes` in /etc/gts7xl/write-boot.conf.** RECOVERY is never written by it
+  and stays on a known-good kernel (Vol Up + Power).
+
+What the ISO gave: `arch/aarch64/omarchy-root.img.zst` is the installed system as a btrfs
+image (subvolume `omarchy-root`); the installer (`/usr/share/omarchy-iso/orchestrator`) writes
+it, then runs `omarchy-apply-system --install-user U --first-install` (root) and
+`omarchy-provision-user --force --first-install` (user). `tools/build-omarchy-rootfs.sh` does
+the same in a qemu-user chroot, inside a private mount namespace (stage / setup / device /
+image), with these deviations:
+- repos: Omarchy's `pacman-stable.conf`; no `-Syu` (today's repos are past the 4.5.0 snapshot:
+  openssl 4, aquamarine 0.16 under the pinned hyprland 0.56). linux-firmware-qcom and
+  vulkan-freedreno from the ISO's offline repo (same snapshot); kmscon from the ALARM mirror
+  (Omarchy's stable mirror lists it but returns 404), signatures checked; squeekboard online.
+  The online package set therefore must be re-checked before the first `omarchy-update`.
+- removed: linux-omarchy (+headers), limine, limine-mkinitcpio-hook, limine-snapper-sync;
+  mkinitcpio pacman hooks masked.
+- Omarchy install steps skipped in the build: `config/snapper.sh` (no btrfs), `config/firewall.sh`
+  (ufw cannot reach the kernel through qemu: runs on the first boot, `gts7xl-firstboot.service`,
+  SSH allowed first), and every hardware script except network, wireless regdom and bluetooth
+  (Omarchy detects the build host: it tried to install the host's NVIDIA driver).
+- Hyprland config is Lua in Omarchy 4.5: overrides in `~/.config/hypr/gts7xl.lua`, required
+  last from `hyprland.lua`.
+- The pmOS initramfs needs nothing from the root but `/sbin/init`; p1 (`pmOS_boot`) is the
+  tablet's current boot filesystem byte-for-byte content (from the backup).
+
+Host safety: a chroot teardown with shared rbind mounts unmounts the host's /sys and /dev
+submounts. The script now runs in `unshare --mount --propagation private`, makes the chroot
+rprivate and tears down with `umount -R` only. Separately, host mounts re-created by hand while
+pmbootstrap chroots exist propagate into their `/sys` binds, and pmbootstrap's own teardown
+then removes them from the host again (seen 21:23 and 21:24): re-created host mounts must be
+made private (`mount --make-private`).

@@ -1,0 +1,29 @@
+# Kernel of the Samsung Galaxy Tab S7+ 5G (gts7xl) for the Omarchy root filesystem.
+# Repackages the pmaports build (linux-samsung-gts7xl apk: modules) and the matching BOOT
+# image from tools/build-recovery-shim.sh (shim + kernel + pmOS initramfs). Local only:
+# the boot image carries Samsung-derived bits (stock boot header, dtb, vbmeta blob).
+#   GTS7XL_APK=... GTS7XL_BOOT=build/archive/boot-shim-rNN-xxxx.img CARCH=aarch64 makepkg
+pkgname=linux-gts7xl
+pkgver=7.3.4.r20
+pkgrel=1
+pkgdesc="Linux for the Samsung Galaxy Tab S7+ 5G (modules + BOOT image, written by a hook)"
+arch=(aarch64)
+url="https://github.com/tarpediem/gts7xl-mainline"
+license=(GPL-2.0-only)
+depends=(kmod coreutils util-linux)
+provides=(linux)
+backup=(etc/gts7xl/write-boot.conf)
+options=(!strip !debug)
+source=(gts7xl-write-boot 90-gts7xl-boot.hook write-boot.conf)
+sha256sums=(SKIP SKIP SKIP)
+
+package() {
+	: "${GTS7XL_APK:?set GTS7XL_APK}" "${GTS7XL_BOOT:?set GTS7XL_BOOT}"
+	bsdtar -xf "$GTS7XL_APK" -C "$pkgdir" usr/lib/modules
+	install -Dm644 "$GTS7XL_BOOT" "$pkgdir/usr/lib/gts7xl/boot-shim.img"
+	(cd "$pkgdir/usr/lib/gts7xl" && sha256sum boot-shim.img > boot-shim.img.sha256)
+	install -Dm755 "$srcdir/gts7xl-write-boot" "$pkgdir/usr/lib/gts7xl/gts7xl-write-boot"
+	install -Dm644 "$srcdir/90-gts7xl-boot.hook" "$pkgdir/usr/share/libalpm/hooks/90-gts7xl-boot.hook"
+	install -Dm644 "$srcdir/write-boot.conf" "$pkgdir/etc/gts7xl/write-boot.conf"
+}
+

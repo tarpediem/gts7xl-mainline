@@ -1254,8 +1254,8 @@ getty on tty2+ (Ctrl+Alt+F2). Defaults seeded into ~/.config by `gts7xl-hyprland
 Hyprland 0.54.3 (Alpine): DSI-1 2800x1752@120, scale 2 (1400x876), freedreno via GBM,
 touchscreen bound to DSI-1 (owner: "ça marche bien"), BT keyboard seen (layout us, mod ALT: the
 keyboard is QWERTY without a Super key), `misc:disable_hyprland_guiutils_check` (not packaged
-in Alpine). Power key: `gts7xl-hypr-dpms` toggles DPMS (script tested off/on); physical press
-under Hyprland not yet confirmed. No sound card, no accelerometer. Screenshot:
+in Alpine). Power key: `gts7xl-hypr-dpms` toggles DPMS; **physical press validated by the owner** (screen
+off/on under Hyprland). No sound card, no accelerometer. Screenshot:
 `build/gui/hyprland-desktop.png` (local only: shows the network name). grim from an SSH session
 hung once while the panel was idle; with the session active it works.
 Next target: Omarchy aarch64, design in `docs/omarchy-aarch64-design.md`.
@@ -1358,3 +1358,32 @@ ADSP up, 4 amps, card S5G; PipeWire sink "Built-in Audio Speakers", stream opene
 
 ## 2026-11-17T21:34:14+07:00 flash
 - BOOT: 0987350180097721d8e63cb80a26643cba7b86c10923545728e48ecdb0947640 build/archive/boot-shim-r20-09873501.img
+
+## 2026-11-17 — Omarchy 4.5.0 aarch64 image for USERDATA (built, not written)
+
+Design and build details: `docs/omarchy-aarch64-design.md` (section 8). Source: the official
+`omarchy-4.5.0-aarch64.iso` (sha256 c9a9dd1107c10924…, from iso.omarchy.org), its prebuilt root
+image `omarchy-root.img.zst` (sha256 64c292886b3b4e38…, matches the ISO's .sha256).
+`tools/build-omarchy-rootfs.sh stage|setup|device|image` (qemu-user chroot in a private mount
+namespace), device layer `arch/gts7xl-device`, kernel package `arch/linux-gts7xl`.
+
+Image `build/omarchy/omarchy-gts7xl.img` (local only: Samsung zap shader, password hash, SSH
+host keys): 15.8 GiB (11 GiB allocated), sha256
+`b4f8b5aee8f8fb9e55896d4197cce1794e94a3a984eeab3d1c71fe428a923eec`. GPT 4096-byte sectors,
+p1 pmOS_boot ext2 (tablet's boot filesystem content) and p2 pmOS_root ext4 (14.9 GiB, grown on
+the first boot), the current UUIDs (1f14fc28-…, 793aa611-…: same as BOOT r20 and RECOVERY r15
+cmdlines); e2fsck -fn clean. Contents: Omarchy 4.5.0 (hyprland 0.56.2, SDDM autologin of
+`tarpediem` into the Omarchy session), `linux-gts7xl 7.3.4.r20` (modules 7.3.4-r20 + BOOT image
+r20 09873501, write-boot hook in dry run), fallback modules 7.3.4 (r14, for RECOVERY r15),
+linux-firmware-qcom + atheros, zap shader, vulkan-freedreno, squeekboard, kmscon on tty2+,
+en_US.UTF-8, us layout, left Alt = Super on the BT keyboard, scale 2, touch bound to DSI-1,
+power key = DPMS, gts7xl-bt-addr, gts7xl-powerkey, Esc hwdb, polkit, sshd key-only with the
+current SSH host keys and authorized key, hostname gts7xl, first-boot firewall unit.
+User password: generated, in `build/omarchy/credentials/password` (600, never published).
+Not in it yet: the audio work (ADSP firmware, UCM, PipeWire setup of r20).
+
+pmOS backup before wiping (`build/backup-pmos-20261117/`, 700, local only, contains the Wi-Fi
+key): `pmos-root.tar.zst` (full root, one filesystem, without /var/cache/apk; 25894 entries,
+read back), `pmos-boot.tar.zst`, `extracts.tar.zst` (home, /etc, bluetooth, modules, zap),
+`packages.txt`, `cmdline-uuids.txt`, `SHA256SUMS`. Taken 21:12-21:15 on r19 (before the r20
+flash).

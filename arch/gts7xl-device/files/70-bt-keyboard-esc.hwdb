@@ -1,0 +1,2 @@
+evdev:name:BT Keyboard Consumer Control:*
+ KEYBOARD_KEY_c0223=esc

@@ -1,0 +1,50 @@
+#!/bin/bash
+# Write the packaged boot image (shim + kernel + pmOS initramfs) to the BOOT partition.
+# Called by the pacman hook 90-gts7xl-boot.hook after linux-gts7xl is installed or upgraded.
+# RECOVERY is never touched: it stays on a known-good kernel (Vol Up + Power) as the fallback.
+#
+# Dry run unless /etc/gts7xl/write-boot.conf contains WRITE_BOOT=yes.
+#   gts7xl-write-boot [--dry-run] [IMAGE]
+set -euo pipefail
+img=${2:-${1:-/usr/lib/gts7xl/boot-shim.img}}
+[ "${1:-}" = --dry-run ] && { dry=1; img=${2:-/usr/lib/gts7xl/boot-shim.img}; } || dry=0
+conf=/etc/gts7xl/write-boot.conf
+[ -r "$conf" ] && . "$conf"
+[ "${WRITE_BOOT:-no}" = yes ] || dry=1
+part=/dev/disk/by-partlabel/boot
+backups=/var/lib/gts7xl
+say() { echo "gts7xl-write-boot: $*"; }
+
+[ -f "$img" ] || { say "no image $img"; exit 1; }
+[ -f "$img.sha256" ] || { say "no $img.sha256"; exit 1; }
+want=$(cut -d' ' -f1 "$img.sha256")
+have=$(sha256sum "$img" | cut -d' ' -f1)
+[ "$want" = "$have" ] || { say "image sha256 mismatch, not writing"; exit 1; }
+[ -b "$part" ] || { say "no BOOT partition ($part)"; exit 1; }
+dev=$(readlink -f "$part")
+psize=$(blockdev --getsize64 "$dev")
+isize=$(stat -c %s "$img")
+[ "$isize" -le "$psize" ] || { say "image $isize bytes > BOOT $psize bytes"; exit 1; }
+# Refuse anything that does not look like an Android boot image with the shim.
+[ "$(head -c 8 "$img")" = ANDROID! ] || { say "not an Android boot image"; exit 1; }
+cur=$(head -c "$isize" "$dev" | sha256sum | cut -d' ' -f1)
+if [ "$cur" = "$want" ]; then say "BOOT already holds this image"; exit 0; fi
+say "BOOT=$dev ($psize bytes), image $img ($isize bytes, sha256 ${want:0:16})"
+if [ "$dry" = 1 ]; then
+	say "dry run: would back up BOOT to $backups/boot-<date>.img, write the image, read it back"
+	say "enable with WRITE_BOOT=yes in $conf"
+	exit 0
+fi
+mkdir -p "$backups"
+bk=$backups/boot-$(date +%Y%m%d-%H%M%S).img
+head -c "$psize" "$dev" > "$bk"
+ls -1t "$backups"/boot-*.img | tail -n +3 | xargs -r rm -f   # keep the last two
+dd if="$img" of="$dev" bs=1M conv=fsync status=none
+sync
+back=$(head -c "$isize" "$dev" | sha256sum | cut -d' ' -f1)
+if [ "$back" != "$want" ]; then
+	say "READ-BACK MISMATCH: restoring $bk"
+	dd if="$bk" of="$dev" bs=1M conv=fsync status=none
+	exit 1
+fi
+say "BOOT written and verified (previous BOOT saved in $bk). RECOVERY unchanged."

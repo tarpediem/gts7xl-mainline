@@ -1,0 +1,10 @@
+[Trigger]
+Type = Package
+Operation = Install
+Operation = Upgrade
+Target = linux-gts7xl
+
+[Action]
+Description = gts7xl: writing the boot image to BOOT (dry run unless enabled)...
+When = PostTransaction
+Exec = /usr/lib/gts7xl/gts7xl-write-boot
