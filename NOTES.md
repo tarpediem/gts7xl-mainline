@@ -1132,3 +1132,53 @@ input limit 1800000 on DCP and 475000 again on the PC port.
 | `build/initramfs` | `7d11e7ad5cd8831e` |
 
 Same cmdline (UUIDs) as r15. Tests: 204 passed. Not flashed.
+
+## 2026-11-17 — GPU: Adreno 650 (freedreno / turnip) renders, kexec tested, not flashed
+
+Kernel change: DTS only (`DRM_MSM` is built in, adreno included). linux branch `gts7xl-gpu`
+3b5f83db3 (on top of gts7xl 706c794ea; applies cleanly on 4339a19be too):
+`&gmu` and `&gpu` okay, `&gpu_zap_shader` firmware-name
+`qcom/sm8250/samsung/gts7xl/a650_zap.mbn`. `gpu_mem` already sits at the stock pil_gpu
+region (0x9031a000, 8 KiB, live.dts `pil_gpu_region`). pmaports branch `gts7xl-gpu`
+0333ef59f: kernel patch 0027 (pkgrel 16 there; renumber/rebase onto the battery work),
+`device-samsung-gts7xl-nonfree-firmware` (linux-firmware-qcom + firmware-samsung-gts7xl-gpu),
+`firmware-samsung-gts7xl-gpu` (local build only, the .mbn is gitignored).
+
+Firmware:
+- `qcom/a650_sqe.fw`, `qcom/a650_gmu.bin`: linux-firmware-qcom (GMU firmware v2.1.8).
+- Zap shader: not in vendor `/firmware` (only a615/a620 there). It is in the BL tar,
+  `NON-HLOS.bin` (FAT16) `image/a650_zap.{mdt,b00,b01,b02}`, Samsung-signed: never commit
+  or publish it. `tools/extract-gpu-zap.py BL_<...>.tar.md5 build/firmware-gpu` reads the
+  FAT (VFAT long names) and joins it with `tools/pil-squash.py` into `a650_zap.mbn`
+  (13964 bytes, sha256 c74bdb38d0420996 for T976BXXS7DXH1). Install on the tablet as
+  `/lib/firmware/qcom/sm8250/samsung/gts7xl/a650_zap.mbn`, or copy it into the aport dir and
+  build `firmware-samsung-gts7xl-gpu`.
+- The SQE request at 0.43 s (initramfs, no firmware there) fails harmlessly; msm retries on
+  first open from the root filesystem (7.5 s: "loaded qcom/a650_sqe.fw", "Loaded GMU
+  firmware v2.1.8"). No need to put GPU firmware in the initramfs.
+
+Test (kexec, three times, back to r15 each time with Wi-Fi and Bluetooth up): r14 Image
+(byte-identical to the running r15 BOOT kernel, `#15`, so the rootfs modules match) + the
+r14 DTS (c99d858fc, decompiled DTB identical to the r14 package except the three GPU
+properties) + the GPU nodes. Root filesystem packages added on the tablet (apk files
+fetched in the pmbootstrap aarch64 chroot, `apk add --no-network`): linux-firmware-qcom,
+mesa-gl, mesa-vulkan-freedreno, vulkan-loader, vulkan-tools, mesa-utils, kmscube, glmark2,
+libdrm-tests (+ deps). Results (build/gpu/test-19*/):
+- dmesg: GPU bound to msm_dpu, no zap, fault or hang message; `supply vdd/vddcx not found`
+  (dummy, as on other sm8250 boards), `Couldn't register GPU cooling device` (no
+  `#cooling-cells`; harmless), gpucc/gcc `sync_state() pending due to 3d6a000.gmu`.
+- `eglinfo -B -p gbm` / `-p surfaceless`: Mesa 26.3.0 freedreno `FD650`, OpenGL 4.6 core,
+  OpenGL ES 3.2.
+- `vulkaninfo --summary`: `Turnip Adreno (TM) 650`, Vulkan 1.3.363, conformance 1.4.6.1;
+  `vkcube --wsi display` selects it.
+- `glmark2-es2-drm` on screen (2800x1752, kmscon stopped): score 790 (build 1187 fps,
+  terrain 68, refract 123); off screen score 466.
+- kmscube on screen runs (DRM master needs `systemctl stop kmsconvt@tty1`: kmscon holds it).
+  `-c 900` did not finish in 60 s: page-flip rate on the command-mode panel to be measured
+  (see open issues).
+
+Open issues: page-flip rate on the DSI command-mode panel (TE) before Hyprland; GPU
+cooling device / thermal zones; GPU OPPs and speed bin not checked against the stock
+pwrlevels (top stock level 0x22fce8c0 = 587 MHz); kmscon on tty1 must yield the DRM master
+to a compositor (logind seat / VT switch). Not flashed; BOOT/RECOVERY need the battery
+agent's next kernel with patch 0027 merged.
