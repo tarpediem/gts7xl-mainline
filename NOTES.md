@@ -666,3 +666,56 @@ Sources: pmaports d5d84ce29 (`linux-samsung-gts7xl-7.3.4-r13`), aaa55ae63
 Not flashed. The tablet runs r13 by kexec (xz initramfs test, no overlay, on the last boot).
 Next: BD address from EFS (read-only) into the DT or a hook, regulatory/country, a
 supplicant for a real connection test, suspend.
+
+## 2026-11-17 — r14: GPI DMA survives kexec (touch after kexec), kexec + Wi-Fi caveat
+
+**Bug:** after a real boot (RECOVERY) touch works; after `tools/kexec-push.sh` the new kernel
+gets `gpi 900000.dma-controller: cmd: EV ALLOCATE completion timeout:2`, `error alloc_ev_chan:-5`,
+`geni_i2c 994000.i2c: Failed to get rx DMA ch` → no i2c5, no touchscreen.
+
+**Cause:** the GPII channel and event ring contexts are hardware state that outlives the
+kernel. Nothing tears them down on kexec, so the next kernel finds GPII 0 still allocated
+(read on the first fixed boot: ev state 1 = ALLOCATED, both channels 2 = STARTED) and the
+hardware never completes EV ALLOCATE.
+
+**Fix** (linux **c99d858fc**, aport patch 0020, `linux-samsung-gts7xl-7.3.4-r14`, uname `#15`):
+- `gpi_reclaim_gpii()`, called in `gpi_ch_init()` once the IRQ is set up and before
+  `gpi_alloc_ev_chan()`: reads CH/EV CHSTATE; for each allocated channel CH STOP (if
+  started), CH RESET, CH DE_ALLOC, then EV DE_ALLOC (dev_dbg line "gpiiN left allocated").
+- `gpi_shutdown()` (platform `.shutdown`, also run by kexec through `device_shutdown()`):
+  for each ACTIVE GPII stops/resets/de-allocates its active channels, EV DE_ALLOC, disables the
+  interrupts, leaves the software state DISABLE so a later free does not touch the hardware.
+- Test: `tests/test_gpi_kexec.py`.
+
+Results (kexec, `gpi.dyndbg=+p` on a shortened command line: the full ABL command line plus
+`--append` is over 2048 bytes, "Kernel command line too long"):
+1. #14 (unfixed) → #15: probe side: "gpii0 left allocated (ev:1 ch:2/2), resetting it",
+   6 CH CTRL + EV DEALLOC, then EV ALLOCATE OK; `5-0049`, "STM FTS1BA90A Touchscreen", i2c
+   transfers over GPI OK; display (TCON ready, fb0 msmdrmfb), wlan0 (17 BSS), hci0.
+2. #15 → #15: shutdown side: no "left allocated" line (the old kernel's teardown left the
+   registers at NOT ALLOCATED), touch OK, display OK.
+3. #15 → #15 again: touch OK, display OK, wlan0 OK (20 BSS), BT setup OK.
+
+**Separate kexec + Wi-Fi caveat (not GPI):** in run 2 the old kernel had the QCA6390 powered
+and in use; the new kernel got `qcom-pcie: Device not found` and BT `Reading QCA version
+information failed (-110)` (sw-ctrl GPIO 124 low). Run 3 started from a kernel with the
+wireless modules unloaded (wlan-en low) and Wi-Fi/BT came back. Trying to automate that
+(`rmmod hci_uart ath11k_pci qrtr_mhi pci_pwrctrl_pwrseq pwrseq_qcom_wcn` in the kexec jump)
+**panicked** the old kernel with Wi-Fi up: SMMU context fault from the PCIe SID, ath11k
+`firmware crashed: MHI_CB_EE_RDDM`, root port link down, then a synchronous external abort in
+the `qcom_pcie` IRQ thread → `oops=panic` → reboot into RECOVERY (r12). Not kept. Needs a
+proper wireless power-off on shutdown (ath11k / pwrctrl / pwrseq) — open.
+Also on kexec boots: `DSI PLL(0) lock failed` + clk "already disabled/unprepared" WARNs in
+`dsi_phy_driver_probe`; the panel still comes up.
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` (copy: `build/archive/recovery-shim-r14-ec0a2a64.img`) | `ec0a2a64297f34a7` |
+| `build/recovery-shim-signed.img` | `5f0641ae56ce3c7a` |
+| `build/shim-Image` | `6edd14f7f6c1db2f` |
+| `build/vmlinuz` (kexec payload) | `20b54500239f6f36` |
+| `build/initramfs` (kexec payload, zstd) | `5fa5651550ae58bf` |
+| `build/dtbs/sm8250-samsung-gts7xl.dtb` (unchanged) | `496b84691d6272cc` |
+
+Tests: 140 passed (`test_modules_hook.py::test_wireless_after_buffyboard_restart` failed once
+under load, passed alone and on rerun); `test_flash.sh` OK. Not flashed.
