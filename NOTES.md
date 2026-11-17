@@ -454,3 +454,36 @@ the grids from the driver source and fails on any off-grid DTS value (it fails o
 | `build/recovery-shim.img` (copy: `build/archive/recovery-shim-r9-4bcdd974.img`) | `4bcdd97422c39465` |
 | `build/recovery-shim-signed.img` | `445aa7abda44215f` |
 | `build/shim-Image` | `769c2badbc62112c` |
+
+## 2026-11-17T11:43:59+07:00 flash
+- RECOVERY: 4bcdd97422c394651eb11b1b00aa36784fd19f507fa21dbc3cb35b8804977bd2 build/recovery-shim.img
+
+## 2026-11-17 — r10: GPI DMA for the touch bus, kexec + modules over USB (not flashed)
+
+r9 on hardware: boot, display, USB OK; touch dead: `geni_i2c 994000.i2c: … Failed to get tx DMA ch` → SE5 runs in
+GSI mode (FIFO disabled by the firmware), i2c5 needs GPI. r7 had shown the GPI failing: `EV ALLOCATE completion timeout`,
+`alloc_ev_chan:-5`.
+
+GPI fix: the stock tree (live DT and the vendor kona.dtsi) gives the QUPv3_0 GPI `qcom,gpi-ee-offset = <0x1000>`
+(0x6000 for the two other wrappers); mainline's sm8250 match data uses 0, so commands went to the wrong EE window and
+never completed. Register macros, gpii mask 0x7ff, 15 gpii, ev-factor 2 and interrupts 244–256 already match.
+`linux` e3daa7d7e (binding: `qcom,gpi-ee-offset`), dfa9325cc (gpi.c: the DT value overrides the match data),
+56ca27880 (DTS: `&gpi_dma0` okay with 0x1000, i2c5 keeps its GPI `dmas`; i2c0 identical to r9 in the compiled DTB).
+Guard: `tests/test_dts_gpi.py`.
+
+USB iteration (runbook `docs/runbooks/iterate-over-usb.md`): KEXEC/KEXEC_FILE were already on (no KEXEC_SIG, lockdown
+none); `kexec-tools` in the initramfs; `stmfts1b` is now a module in the initramfs, blacklisted for udev there and
+loaded by the hook `50-gts7xl-modules.sh` in the background once telnetd runs (`gts7xl.nomodules` skips it).
+geni-i2c and GPI stay built-in (i2c0 = MUIC/USB path, and GPI is a fw_devlink supplier of i2c0).
+Tools: `tools/usbsh.py` (telnet run / base64 pull / HTTP+wget push), `tools/kexec_dtb.py` (copy /memory from
+/sys/firmware/fdt into the new DTB), `tools/kexec-push.sh`, `tools/module-push.sh` (both with `--dry-run`).
+`pmaports` 03b471e (kernel r10, patches 0015–0017), a731e32 (device r7).
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` (copy: `build/archive/recovery-shim-r10-bda4530a.img`) | `bda4530a7464240c` |
+| `build/recovery-shim-signed.img` | `4a6a77d85ed4b5ca` |
+| `build/shim-Image` | `61a87d0bafd79148` |
+
+Expected: `gpi 900000.dma-controller` without timeouts, i2c-N for 994000.i2c, `gts7xl-modules: loaded stmfts1b` in
+dmesg after telnetd, `stmfts1b … fw 0x…`, touch on buffyboard. kexec/usbsh not yet tried on the tablet.
