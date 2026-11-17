@@ -1355,3 +1355,6 @@ ADSP up, 4 amps, card S5G; PipeWire sink "Built-in Audio Speakers", stream opene
 
     printf 'FLASH\n' | FLASH_SSH="ssh localhost" tools/flash.sh --pit build/gts7xl.pit --keep-vbmeta \
         BOOT=build/archive/boot-shim-r20-09873501.img
+
+## 2026-11-17T21:34:14+07:00 flash
+- BOOT: 0987350180097721d8e63cb80a26643cba7b86c10923545728e48ecdb0947640 build/archive/boot-shim-r20-09873501.img
