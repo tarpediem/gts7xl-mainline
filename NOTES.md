@@ -367,3 +367,13 @@ next time) so disable() always sends display off before power is cut; `suppress_
 Expected on the next boot: TCON_RDY probably high at hand-over; dmesg should show
 `TCON ready but not initialised by us: reset`, then `TCON ready after N ms`, then the console.
 Recovery from a bad picture: `echo 1 > /sys/class/graphics/fb0/blank; echo 0 > …` or reboot into One UI.
+
+## 2026-11-17T10:56:26+07:00 flash
+- RECOVERY: 0f3d127a670c7f8b169521b194f53a0787ca50cdfd3fead3cdd90c3078026911 build/recovery-shim.img
+
+## 2026-11-17 panel driver boot (recovery-shim.img sha256 0f3d127a670c7f8b…)
+- Result: DISPLAY WORKS. msm_dpu + DSI0 + DSC + panel-samsung-s6tuum3: "TCON ready but not initialised by us: reset",
+  "TCON ready after 334 ms", fb0 = msmdrmfb. Kernel console and the pmOS buffyboard on-screen keyboard are shown
+  at 2800x1752 (photo: docs/photos/2026-11-17-first-console.jpg). USB debug shell still works.
+- To look at: "DSI PLL(0) lock failed" + WARN in dsi_phy_driver_probe at 0.38 s (harmless so far, display came up);
+  UFS WriteBooster query attr idn 31 -22 (cosmetic); va_macro deferred (audio, phase 7).
