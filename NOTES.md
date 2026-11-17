@@ -3,6 +3,16 @@
 One entry per build or flash: date, what was built/flashed (sha256 of each image),
 what was observed. Newest at the top.
 
+## Kernel base
+
+- `TAG=v7.3.4`, `PKGVER=7.3.4` (newest stable 7.x tag on 2026-11-17, from the
+  GitHub mirror gregkh/linux; git.kernel.org returned HTTP 502). Used as
+  `pkgver` of `linux-samsung-gts7xl` in the pmaports fork (branch `gts7xl`).
+- Starting kernel config: copied from pmaports
+  `device/testing/linux-postmarketos-qcom-sm8250/config-postmarketos-qcom-sm8250.aarch64`
+  (generated for Linux 7.2.0) into `config-samsung-gts7xl.aarch64`; to be refreshed
+  against v7.3.4 (`olddefconfig`) in Task 7.
+
 ## Reference (stock T976BXXS7DXH1)
 
 Extracted by `tools/extract-reference.sh` (outputs in `reference/`).
