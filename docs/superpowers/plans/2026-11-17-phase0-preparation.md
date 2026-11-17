@@ -10,6 +10,13 @@
 
 **Spec:** `docs/specs/2026-11-17-gts7xl-mainline-design.md`
 
+> **Amended after the phase 0 review (2026-11-17):** `sign_boot.py` no longer has `--cmdline`.
+> It keeps the input image's cmdline (with the `pmos_*_uuid` args from pmbootstrap);
+> `--append-cmdline` adds args, `--replace-cmdline` discards it. Board args live in
+> `deviceinfo_kernel_cmdline`. The deviceinfo also gained `deviceinfo_rootfs_image_sector_size="4096"`
+> and `deviceinfo_flash_method="none"`, and the kernel aport carries the DTS as a patch.
+> The code listings below show the first version.
+
 ## Global Constraints
 
 - Device: Galaxy Tab S7+ **5G**, SM-T976B, codename `gts7xl`. Never reuse values from the Wi-Fi variant (`gts7xlwifi`).
@@ -30,7 +37,7 @@
 | `.gitignore` | keeps `linux/`, `pmaports/`, `build/`, `reference/raw/` out of this repo (they are separate repos or large artifacts) |
 | `NOTES.md` | flash/build log (every image hash, every attempt) |
 | `tools/dtbo.py` | parse and write Android DT-table images (`split`, `empty`) |
-| `tools/sign_boot.py` | copy ABL-checked header fields from the stock boot.img, set cmdline, add AVB footer |
+| `tools/sign_boot.py` | copy ABL-checked header fields from the stock boot.img, keep (or append to) the cmdline, add AVB footer |
 | `tools/flash.sh` | single Heimdall command, partition allow-list, `--dry-run` |
 | `tools/extract-reference.sh` | pull stock boot.img/dtbo.img apart into readable reference files |
 | `tools/keys/testkey_rsa4096.pem`, `tools/images/vbmeta-disabled.img` | copied from the Droidian port |
@@ -296,7 +303,7 @@ git commit -m "Extract stock T976B boot header, DTB and DTBO references"
 
 **Interfaces:**
 - Consumes: `reference/stock-boot-header.txt` format from Task 3 (only to locate the stock image; the tool reads the stock boot.img header directly), `tools/keys/testkey_rsa4096.pem`.
-- Produces: CLI `python3 tools/sign_boot.py --stock STOCK_BOOT --cmdline "…" IN OUT`; function `copy_abl_fields(src: bytes, dst: bytearray) -> None`.
+- Produces: CLI `python3 tools/sign_boot.py --stock STOCK_BOOT [--append-cmdline "…" | --replace-cmdline "…"] IN OUT`; function `copy_abl_fields(src: bytes, dst: bytearray) -> None`.
 
 Header v2 offsets (little-endian): kernel_addr 12, ramdisk_addr 20, second_addr 28, tags_addr 32, page_size 36, header_version 40, os_version 44, name[16] 48, cmdline[512] 64. Copy from stock: ramdisk_addr, second_addr, tags_addr, os_version, name. Keep the input's kernel_addr/page_size. Partition size of `boot`: 71303168 (same partition table on both variants; verify against `heimdall print-pit` in phase 1 before first flash).
 
@@ -723,8 +730,7 @@ pmbootstrap export build
 ```bash
 cd gts7xl-mainline
 python3 tools/sign_boot.py --stock <stock-firmware>/fw/boot.img \
-  --cmdline "$(grep -oP 'deviceinfo_kernel_cmdline="\K[^"]+' pmaports/device/testing/device-samsung-gts7xl/deviceinfo)" \
-  build/boot.img build/boot-signed.img
+  build/boot.img build/boot-signed.img   # keeps the cmdline written by pmbootstrap
 python3 tools/dtbo.py empty build/dtbo-empty.img
 avbtool info_image --image build/boot-signed.img | grep -E 'Partition Name|Algorithm'
 unpack_bootimg --boot_img build/boot-signed.img --out /tmp/claude-1000/bootcheck >/dev/null

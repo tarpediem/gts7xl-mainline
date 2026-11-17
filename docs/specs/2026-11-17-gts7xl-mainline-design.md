@@ -80,6 +80,12 @@ Requirements of the Samsung ABL (learned during the Droidian attempt):
    `build-bootimg.py`. Header fields the ABL checks (load addresses, OS
    version/SPL, board name) are copied from this tablet's **stock T976B
    boot.img**, not from the Wi-Fi port's constants.
+   The tool keeps the cmdline pmbootstrap wrote (`pmos_boot_uuid`,
+   `pmos_root_uuid`, `pmos_rootfsopts` plus `deviceinfo_kernel_cmdline`): the
+   initramfs looks the subpartitions up by filesystem UUID. A signed boot.img
+   therefore only matches the rootfs image of the same `pmbootstrap install`.
+   The rootfs image uses 4096-byte sectors (`deviceinfo_rootfs_image_sector_size`),
+   like the tablet's UFS.
 2. **vbmeta disabled** (flags 0x02): `vbmeta-disabled.img`, always flashed in
    the same Heimdall command (single-image commits are unreliable on SM8250).
 3. **DTB selection by `qcom,msm-id` and `qcom,board-id`**: our mainline DTB must
@@ -146,6 +152,9 @@ working boot.
 - Each flash is done with the maintainer present and the tablet in Download Mode.
   The first flash wipes One UI and is confirmed separately.
 - Only `BOOT`, `DTBO`, `VBMETA`, `RECOVERY`, `USERDATA` are ever written.
+- The only flash path is `tools/flash.sh`. `pmbootstrap flasher` is never used
+  (it would write the unsigned boot.img without vbmeta); the device package sets
+  `deviceinfo_flash_method="none"` so it refuses.
 - Before the first flash: back up EFS from TWRP to the host.
 - Every flash is logged in `NOTES.md` with the image hashes.
 
