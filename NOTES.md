@@ -1621,3 +1621,38 @@ Mics / USB-C headset (investigated only):
   WCD938x is disabled in the stock tree. Digital USB-C dongles need USB host mode (see
   docs/usb-dual-role-design.md) and then work with snd-usb-audio; analog accessory mode is not
   wired to a codec here.
+
+### 2026-11-17 night — sensors, S Pen, rear camera: kexec results (root through the tablet's passwordless sudo)
+
+- **SLPI / accelerometer: works** (kexec r21 Image + sensors DTB, 23:10-23:20; again on r50).
+  slpi remoteproc running, /dev/fastrpc-sdsp (group fastrpc), hexagonrpcd up, `ssccli --sensor
+  accelerometer` steady (x 4.1, y -0.3, z 8.9 m/s², tablet resting tilted), magnetometer reads,
+  iio-sensor-proxy HasAccelerometer=true. Two fixes were needed: (1) serving the stock json
+  configs makes the SLPI parse them and then ask the host for a "sns_registry" write interface
+  hexagonrpcd lacks -> session dies (restart loop); now only the registry is served (configs kept
+  as sensors/config.stock, unserved); (2) the SLPI reads `registry/../sns_reg_version` and Samsung's
+  `/sys/class/sensors/ssc_core/ssc_hw_rev`: hexagonrpcd patch (arch/hexagonrpcd/0001-…, local
+  branch gts7xl-samsung of linux-msm/hexagonrpc). `ambient_light`: not provided by this SLPI (light
+  sensors are "ambient_light_v"/"light_cct_v" in the stock list); no light in GNOME. Rotation
+  direction not checked (needs hands). Hall: "Hall sensors" input with SW_LID + SW_MACHINE_COVER,
+  irqs 157/110 bound, both open.
+- **S Pen: probes** (r50): `wacom-w90xx 17-0056: fw 0x403d, mpu 0x45, bl 0x03, max 26712x16714,
+  pressure 4095, tilt 63, height 255`; input "Wacom W90xx pen" ABS X 0-26712, Y 0-16714 (stock has no
+  use_dt_coord: the DT max_coords 22656x14160 are unused, ranges now from the query). No pen
+  event seen (nobody to hold the pen).
+- **Rear camera: probes and identifies** (r50, rearcam DTB): s5k3m5 20-002d at the stock 19.2 MHz
+  MCLK (patch 0037: probe/identify at 19.2 MHz, streaming refused), chip id read, CAMSS media0 +
+  subdevs + video nodes; libcamera 0.7.2 (installed from the ALARM repo) `cam -l`: "Internal back
+  camera (/base/soc@0/cci@ac4f000/i2c-bus@0/camera@2d)". No stream.
+- **Incident, fixed:** `linux-modules-cleanup.service` (kernel-modules-hook) moves every
+  /usr/lib/modules/<rel> not owned by pacman and not the running kernel to .old and deletes it:
+  booting r21/r50 by kexec removed 7.3.4-r20 (BOOT) and 7.3.4 (RECOVERY), so r20 came up without
+  Wi-Fi/BT/audio (23:32). Restored from the r20 apk and the r14 module tree, cleanup masked on the
+  tablet (and in arch/gts7xl-device/install.sh, 15db24a). Verified: r20 back with wlp1s0, hci0,
+  speakers; module dirs 7.3.4, -r20, -r21, -r50 survive reboots. (The GPU agent's earlier r21 test
+  likely triggered the same; any image without the mask will repeat it.)
+- r50 apk (sha256 533cc2e3a3d99143, pmaports gts7xl-sensors 0033-0039, pkgrel 50) copied to
+  build/sensors-k50/ and moved out of the pmbootstrap repo to packages-aside (+ `pmbootstrap index`,
+  in a private mount namespace) so nothing installs it by accident. Tablet keeps
+  /usr/lib/modules/7.3.4-r50 (outside pacman), hexagonrpcd in /usr/local/bin, units/rules in /etc,
+  libcamera + libcamera-tools installed, /root/sensors-config.aside (stock json, unserved).

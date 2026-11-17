@@ -4,11 +4,11 @@
 # streaming), SLPI sensors and hall switches again; then reboot to the BOOT kernel.
 # Nothing is flashed. Runs as the user; root on the tablet through its passwordless sudo.
 #
-# usage: tools/sensors-k50-test.sh [APK]   (default: newest linux-samsung-gts7xl-7.3.4-r50.apk)
+# usage: tools/sensors-k50-test.sh [APK]   (default: build/sensors-k50/linux-samsung-gts7xl-7.3.4-r50.apk, kept out of the pmbootstrap repo)
 set -uo pipefail
 SP=${SP:-/tmp/claude-1000/-home-tarpediem-Work-samsung-gts7xl-mainline/8218a82d-737f-4327-a27f-5970ee3d04e8/scratchpad}
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-APK=${1:-$HOME/.local/var/pmbootstrap/packages/edge/aarch64/linux-samsung-gts7xl-7.3.4-r50.apk}
+APK=${1:-$ROOT/build/sensors-k50/linux-samsung-gts7xl-7.3.4-r50.apk}
 REL=7.3.4-r50
 OUT=$ROOT/build/sensors-k50-test-$(date +%H%M%S); mkdir -p "$OUT"
 O=(-i "$HOME/.ssh/gts7xl_ed25519" -o IdentitiesOnly=yes -o "UserKnownHostsFile=$SP/gts7xl_known_hosts" -o ConnectTimeout=5)

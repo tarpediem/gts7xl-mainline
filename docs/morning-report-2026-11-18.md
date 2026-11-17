@@ -45,32 +45,42 @@ command with `BOOT=build/archive/boot-shim-r20-09873501.img`, or Vol Up + Power 
 6. **USB**: the USB-C port is still device-only (PC link). Hubs/keyboards on USB-C need the OTG
    work, which is designed but not started.
 
-## Camera & sensors (prepared overnight, not tested on the tablet)
+## Camera & sensors (kexec-tested overnight, nothing flashed)
 
-Nothing here is on the tablet's kernel yet, and nothing was flashed. The agents could not test it:
-it needs root on the tablet (your password), which they do not type.
+Tested by booting a test kernel without flashing (kexec), then back to r20 each time. Your
+BOOT kernel (r20) is unchanged; these features need the next kernel build (pmaports branch
+`gts7xl-sensors`, test release r50) to be in what you flash.
 
-- **Screen rotation (accelerometer)**: the sensors (accelerometer/gyroscope, compass, two light
-  sensors) sit behind the sensor DSP (SLPI). Ready: device tree (SLPI on), the SLPI firmware and
-  sensor files from your stock firmware and your tablet's own calibration, hexagonrpcd (built on
-  the tablet in `~/src`), udev and service files. Files staged in `~/staging-sensors` on the tablet.
-  Feasible and likely to work; GNOME then rotates the screen by itself.
-- **Book cover**: the two magnet sensors become a lid switch and a "cover" switch. Closing the
-  cover will **not** suspend (set to ignore); GNOME just turns the screen off.
-- **S Pen (drawing)**: new driver for the Wacom digitizer (Samsung's protocol differs from the
-  mainline Wacom driver): pen position, pressure, hover, tilt, side button, eraser. Needs a
-  kernel built with it (pmaports branch `gts7xl-sensors`). Pen holder detection not done.
-  **S Pen Bluetooth (Air actions)**: proprietary Samsung protocol; not touched, low chance.
-- **Cameras**: rear 13 MP Samsung S5K3M5 has a mainline driver: a test device tree is ready
-  (separate file, not used at boot). Front 8 MP (S5K4HA) and ultra-wide 5 MP (S5K5E9) have no
-  Linux driver: each would need one written. Expect photos only through libcamera's software
-  pipeline (no autofocus at first).
-- **Fingerprint**: not possible (owned by the secure firmware). **Light sensor**: comes with the
-  sensor DSP work above (GNOME auto-brightness).
+- **Screen rotation (accelerometer): works.** The sensors sit behind the sensor DSP (SLPI),
+  which now boots with your own factory calibration; the accelerometer gives steady readings
+  (about 9.8 m/s² total) and iio-sensor-proxy (what GNOME uses) sees it. Not checked yet: that
+  GNOME rotates the right way when you turn the tablet (needs hands).
+  Compass also reads. **Light sensor: not found** on the sensor DSP (Samsung seems to expose it
+  differently), so no auto-brightness yet.
+- **Book cover**: two cover switches show up (book cover and pen-digitizer cover); both read
+  "open" at night. Close the cover once to check. Closing it will **not** suspend (set to
+  ignore); GNOME just turns the screen off.
+- **S Pen (drawing): driver works, pen not yet tried.** The digitizer is detected (firmware
+  0x403d) and appears as a pen tablet with pressure (4096 levels), hover, tilt, side button and
+  eraser. Please draw something (e.g. in a paint app) on the test kernel: check that the
+  cursor sits under the pen tip in the corners. Pen-holder detection not done.
+  **S Pen Bluetooth (Air actions)**: Samsung's own protocol; not touched, low chance.
+- **Rear camera: detected, no pictures yet.** The 13 MP sensor (Samsung S5K3M5) powers up on its
+  stock rails and clock, answers with the right chip ID, and libcamera lists
+  "Internal back camera". Taking pictures needs one more step (the driver only has settings for a
+  24 MHz sensor clock; stock uses 19.2 MHz). Front (8 MP) and ultra-wide (5 MP) sensors have no
+  Linux driver.
+- **Fingerprint**: not possible (owned by the secure firmware).
 
-To test (about 10 minutes, the tablet reboots twice, back on r20 at the end): from the PC,
-`tools/sensors-kexec-test.sh <root runner>`, or ask the coordinator to run it. Results land in
-`build/sensors-test-*/`.
+**Fixed during the night (important):** a package on Omarchy (`kernel-modules-hook`) deletes the
+module folders of every kernel that pacman does not own at each boot. Booting test kernels made it
+delete the r20 (your BOOT) and RECOVERY module folders: r20 then came up without Wi-Fi, Bluetooth
+and sound. They were restored and that cleanup service is now disabled on the tablet (and in the
+image build). Checked after the last reboot: r20 with Wi-Fi, Bluetooth and speakers.
+
+To try the test kernel again (10 minutes, ends back on r20): `tools/sensors-k50-test.sh
+build/sensors-k50/linux-samsung-gts7xl-7.3.4-r50.apk` from the PC (results in
+`build/sensors-k50-test-*/`).
 
 ## Audio (speakers, overnight, no sound played)
 
