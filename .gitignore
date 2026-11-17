@@ -1,0 +1,7 @@
+linux/
+pmaports/
+build/
+reference/raw/
+__pycache__/
+.pytest_cache/
+.superpowers/
