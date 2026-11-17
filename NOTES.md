@@ -435,3 +435,22 @@ If SE5 is in GSI-only mode, i2c5 now fails to probe (no touch) instead of needin
 - RULE: archive every flashed image in build/archive/ before rebuilding.
 - Escape a RECOVERY boot loop: Vol Down + Power, at black screen switch at once to Vol Up + Vol Down → Download Mode,
   then reflash build/stock/recovery.img. Recovered with stock recovery (sha256 780166d9…), One UI boots.
+
+## 2026-11-17 — r7 root cause, r9 (not flashed)
+
+pstore of r7 (`build/r7crash/console-ramoops-0`): `vreg_l13a_3p3: unsupported voltage constraints 3304000-3296000uV`,
+then `qcom-rpmh-regulator 18200000.rsc:regulators-0: ldo13 devm_regulator_register() failed, ret=-22`. 3300000 uV is not
+on the PMIC5 PLDO grid (1504000 + n × 8000), so the whole PM8150 RPMh regulator device failed → no L5A/L9A (DSI, white
+panel), no USB PHY supplies (no USB). r8 still had this value: **r8 would hang the same way, never flash it.**
+
+r9 = r8 + `linux` 4cb39cb88: L13A min = max = 3296000 (nearest step below the stock 3.3 V). All other regulators checked
+against `qcom-rpmh-regulator.c`: S4A 1.8–1.92 V (hfsmps510), L2A 3.072 V, L17A 2.496–3.008 V (pldo), L12A/L14A 1.8 V
+(pldo_lv), L5A 0.88 V, L6A/L9A 1.2 V (nldo) — all on grid, unchanged. New host test `tests/test_dts_regulators.py` reads
+the grids from the driver source and fails on any off-grid DTS value (it fails on the r7/r8 tree).
+`pmaports`: kernel r9 (patch 0014).
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` (copy: `build/archive/recovery-shim-r9-4bcdd974.img`) | `4bcdd97422c39465` |
+| `build/recovery-shim-signed.img` | `445aa7abda44215f` |
+| `build/shim-Image` | `769c2badbc62112c` |
