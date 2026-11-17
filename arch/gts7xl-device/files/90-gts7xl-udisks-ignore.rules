@@ -1,0 +1,4 @@
+# gts7xl: the USERDATA loop disk (pmOS_boot/pmOS_root subpartitions) is the root;
+# never automount it or ask for a password to mount it.
+KERNEL=="loop0", ENV{UDISKS_IGNORE}="1"
+KERNEL=="loop0p*", ENV{UDISKS_IGNORE}="1", ENV{UDISKS_AUTO}="0"

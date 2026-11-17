@@ -273,9 +273,25 @@ device() {
 		n=0
 		for c in "$t"/etc/NetworkManager/system-connections/*.nmconnection; do
 			[ -f "$c" ] || continue
+			# pmOS named the Wi-Fi interface wlan0, Arch names it wlp1s0: drop the binding.
+			sed -i '/^interface-name=/d' "$c"
 			install -D -m600 -o0 -g0 "$c" "$R/etc/NetworkManager/system-connections/$(basename "$c")"; n=$((n + 1))
 		done
 		rm -rf "$t"; log "NetworkManager connections carried over: $n"
+		# Bluetooth: same controller address as under pmOS (gts7xl-bt-addr derives it from
+		# the pmOS machine-id) and the pairings, so paired keyboards reconnect.
+		t=$(mktemp -d); chmod 700 "$t"
+		zstd -dc "$BACKUP/pmos-root.tar.zst" | tar -x -C "$t" ./etc/machine-id ./var/lib/bluetooth 2>/dev/null || true
+		if [ -s "$t/etc/machine-id" ]; then
+			install -D -m644 -o0 -g0 "$t/etc/machine-id" "$R/etc/gts7xl/bt-machine-id"
+			mkdir -p "$R/etc/systemd/system/gts7xl-bt-addr.service.d"
+			printf '[Service]\nEnvironment=GTS7XL_MACHINE_ID=/etc/gts7xl/bt-machine-id\n' > "$R/etc/systemd/system/gts7xl-bt-addr.service.d/pmos-address.conf"
+		fi
+		if [ -d "$t/var/lib/bluetooth" ]; then
+			mkdir -p "$R/var/lib/bluetooth"; cp -a "$t"/var/lib/bluetooth/. "$R/var/lib/bluetooth/"
+			chown -R 0:0 "$R/var/lib/bluetooth"; chmod 700 "$R/var/lib/bluetooth"/*
+		fi
+		rm -rf "$t"; log "Bluetooth identity and pairings carried over"
 	fi
 	in_root ufw allow ssh >/dev/null 2>&1 || true
 	sed -i '/^DisableSandbox$/d' "$R/etc/pacman.conf"

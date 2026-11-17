@@ -19,6 +19,8 @@ inst 755 gts7xl-firstboot usr/lib/gts7xl/gts7xl-firstboot
 inst 644 gts7xl-firstboot.service usr/lib/systemd/system/gts7xl-firstboot.service
 inst 755 gts7xl-osk usr/bin/gts7xl-osk
 inst 644 70-bt-keyboard-esc.hwdb etc/udev/hwdb.d/70-bt-keyboard-esc.hwdb
+inst 644 90-gts7xl-udisks-ignore.rules etc/udev/rules.d/90-gts7xl-udisks-ignore.rules
+install -D -m440 "$f/10-gts7xl-wheel.sudoers" "$R/etc/sudoers.d/10-gts7xl-wheel"
 inst 644 00-gts7xl-no-foreign-kernel.hook usr/share/libalpm/hooks/00-gts7xl-no-foreign-kernel.hook
 inst 755 gts7xl-pacman-ignore "home/$U/.config/omarchy/hooks/pre-refresh-pacman.d/gts7xl-ignorepkg"
 chroot "$R" chown -R "$U:$U" "/home/$U/.config/omarchy"
@@ -40,6 +42,8 @@ printf 'KEYMAP=us\n' > "$R/etc/vconsole.conf"
 printf "poubelle\n" > "$R/etc/hostname"
 grep -q "poubelle" "$R/etc/hosts" 2>/dev/null || printf "127.0.0.1\tlocalhost\n::1\t\tlocalhost\n127.0.1.1\tpoubelle\n" >> "$R/etc/hosts"
 chroot "$R" systemd-hwdb update
+ln -sfn /usr/share/zoneinfo/Asia/Bangkok "$R/etc/localtime"
+chroot "$R" systemctl enable systemd-timesyncd.service >/dev/null 2>&1 || true
 chroot "$R" systemctl enable gts7xl-bt-addr.service gts7xl-powerkey.service gts7xl-firstboot.service >/dev/null
 # No zram module in our kernel.
 chroot "$R" systemctl mask systemd-zram-setup@zram0.service >/dev/null 2>&1 || true

@@ -1407,3 +1407,25 @@ filter-chain sink "Speakers (protected)" (`/usr/share/pipewire/pipewire.conf.d/6
 on pmOS (Alpine needs pipewire-filter-graph{,-builtin}; Arch ships the module): sink created,
 linked to the speakers, default; `node.dont-reconnect` had to go (the playback side starts before
 the ALSA sink exists). No limiter yet (no LSP/LADSPA in the snapshot): open.
+
+## 2026-11-17T22:06:19+07:00 userdata write
+- image: `omarchy-gts7xl.img`, 17185112064 bytes, sha256 9a8abc42accc65dd8248dbf99de0e834084ee9ac2a9dd6b8a89d9da655c9adef
+- target: /dev/sda37 (PARTNAME=userdata), start byte 12693012480, 243138539520 bytes
+- result: OK, 17185112064 bytes written, read back sha256 matches
+
+### 2026-11-17 — Omarchy on the tablet: first boot
+
+USERDATA written by the owner (sha256 9a8abc42…, read back OK). Normal boot (BOOT r20): Omarchy
+up in ~25 s, root grown to 223 GiB, no failed unit except ufw (see below), 0 "BTF: -22", charger
+safety monitor line present, usb_type [SDP] (input_current_limit read 450000 once: AICL step,
+under the 475 mA reference), GPU freedreno FD650 (Hyprland renderer), ADSP up + 4 CS35L41,
+default sink "Speakers (protected)" linked to the speakers, Firefox 160, cliamp v2.4.1, hostname
+poubelle, touch device bound, kmscon on tty2 (JetBrainsMono 20), squeekboard shows on request.
+Fixed live and in the build (arch/gts7xl-device, build script): no sudoers rule for wheel (the
+ISO's archinstall writes it; got root once through the session's polkit agent: pkexec typed by
+wtype), `misc.vfr` unknown in Omarchy's Lua config, udisks asked for a password to mount the
+root loop's partitions (UDISKS_IGNORE rule), the Wi-Fi connection was bound to `wlan0`
+(interface is wlp1s0), clock in 1971 (NTP enabled, Asia/Bangkok), Bluetooth: pmOS machine-id
+kept for gts7xl-bt-addr (same controller address D6:71:…) + /var/lib/bluetooth: keyboard
+paired/trusted again. Open: ufw.service fails at boot (kernel lacks xt_limit / ip6 rules
+modules: "Extension limit revision 0 not supported"), firewall partly applied.

@@ -11,10 +11,6 @@ hl.config({
     -- The touchscreen already reports in the landscape frame (kernel DT); bind it to the panel.
     touchdevice = { output = "DSI-1" },
   },
-  misc = {
-    -- Redraw only on change: command-mode panel.
-    vfr = true,
-  },
 })
 
 -- The owner's BT keyboard is QWERTY with no Super key: its left Alt acts as Super so every

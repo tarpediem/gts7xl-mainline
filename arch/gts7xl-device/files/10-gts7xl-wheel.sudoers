@@ -1,0 +1,2 @@
+# gts7xl: wheel may use sudo (the ISO installer adds this through archinstall).
+%wheel ALL=(ALL:ALL) ALL
