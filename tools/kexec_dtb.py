@@ -13,13 +13,23 @@ import argparse, shutil, subprocess, sys
 
 
 def fdt(*args):
-    return subprocess.run(args, capture_output=True, text=True, check=True).stdout
+    # fdtget -l exits 1 on the ABL-built /sys/firmware/fdt even though it prints the full
+    # node list (seen on gts7xl r10); trust the output when there is some.
+    r = subprocess.run(args, capture_output=True, text=True)
+    if r.returncode and not r.stdout.strip():
+        raise subprocess.CalledProcessError(r.returncode, args, r.stdout, r.stderr)
+    return r.stdout
 
 
 def memory_node(dtb):
     for name in fdt("fdtget", "-l", dtb, "/").split():
         if name == "memory" or name.startswith("memory@"):
             return "/" + name
+    # The listing of the ABL-built tree stops early; probe the usual names directly.
+    for path in ("/memory@80000000", "/memory"):
+        if subprocess.run(["fdtget", "-t", "s", dtb, path, "device_type"],
+                          capture_output=True, text=True).stdout.strip() == "memory":
+            return path
     raise SystemExit(f"kexec_dtb: no /memory node in {dtb}")
 
 
