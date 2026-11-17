@@ -1459,3 +1459,34 @@ GJS OSK skipped: no 51 in its metadata, built-in OSK kept; Blur my Shell skipped
 apps button; favorites Firefox, Console, Files, Settings, cliamp; dark, accent pink (matches the
 owner's rebutos wallpaper set by the coordinator), battery %, panel 48 px, tap-to-click, natural
 scroll, cursor 24, text scaling 1.0. All three extensions ACTIVE after a session restart.
+
+## 2026-11-17 night — r21 (Landlock, ufw netfilter, GPU cooling), tablet polish (not flashed)
+
+Kernel `linux-samsung-gts7xl-7.3.4-r21` (uname `#22`), pmaports gts7xl 0f762b509: config only —
+CONFIG_SECURITY_LANDLOCK=y (CONFIG_LSM already lists landlock), netfilter for ufw
+(NETFILTER_XT_MATCH_LIMIT/RECENT/HL/STATE/PKTTYPE, IP6_NF_MATCH_IPV6HEADER/RT/HL),
+CONFIG_DEVFREQ_THERMAL=y (GPU cooling device). ZRAM was already built in.
+Kexec test from Omarchy r20 (build/r21-test-225818): `lsm` = lockdown,capability,landlock,yama,bpf;
+no failed unit (ufw.service active, `ufw status` active); pacman -Sy works with its sandbox;
+5 cooling devices (4 before), no "Couldn't register GPU cooling device"; charger safety line,
+[SDP], 475000; Wi-Fi, Bluetooth (same address), ADSP + GMU, GNOME, protected sink; back on r20.
+
+| File | sha256 |
+|---|---|
+| `build/archive/boot-shim-r21-fbb8aa14.img` (BOOT) | `fbb8aa1401e3c2c0f86d74f22c5ca37d0b0648011dfc4cd396726516f2401343` |
+| `build/archive/recovery-shim-r21-f8c89b85.img` (RECOVERY, not to flash) | `f8c89b85…` |
+
+Same cmdline UUIDs as r20. Omarchy has `linux-gts7xl 7.3.4.r21-1` installed (modules 7.3.4-r21,
+BOOT image fbb8aa14, hook dry run checked on the tablet: BOOT = /dev/sda23); 7.3.4-r20 (running
+BOOT) and 7.3.4 (RECOVERY r15 fallback) module dirs kept outside pacman. kexec-tools installed.
+A first r21 build was superseded (build/superseded/) before DEVFREQ_THERMAL; pmbootstrap's rootfs
+chroot needed `apk add <file>` to take the rebuilt same-version package.
+
+Polish on the live tablet (and in arch/gts7xl-device): GNOME app folders (Omarchy, Terminal tools,
+Office, System), screen blank 5 min, no idle suspend, Firefox touch prefs
+(/usr/lib/firefox/browser/defaults/preferences/gts7xl.js), kmscon font 28, zram 7.2 G zstd
+active (unmasked), gnome-tweaks + extension-manager installed, GNOME first-login autostart in the
+image build, owner's wallpaper + fastfetch config carried by the build (local files).
+Host: NetworkManager profile `gts7xl-usb` (172.16.42.2/24 on enp202s0f3u1): the Omarchy rootfs runs
+no DHCP server on usb0, so the host lost its address after a re-enumeration.
+USB OTG / host: design only, docs/usb-dual-role-design.md.

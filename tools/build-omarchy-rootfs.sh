@@ -250,6 +250,16 @@ device() {
 	if [ -s "$WORK/cliamp/cliamp-linux-arm64" ] && (cd "$WORK/cliamp" && sha256sum -c --ignore-missing --status checksums.txt); then
 		install -Dm755 "$WORK/cliamp/cliamp-linux-arm64" "$R/usr/local/bin/cliamp"; log "cliamp installed"
 	else log "cliamp: missing or checksum mismatch, not installed"; fi
+	# Owner's wallpaper and fastfetch logo (local files, not in git: build/wallpaper, build/fastfetch).
+	if [ -d "$root_dir/build/wallpaper" ]; then
+		install -d "$R/home/$USERNAME/Pictures/Wallpapers"
+		cp "$root_dir"/build/wallpaper/*.jpg "$R/home/$USERNAME/Pictures/Wallpapers/" 2>/dev/null || true
+	fi
+	if [ -d "$root_dir/build/fastfetch" ]; then
+		install -d "$R/home/$USERNAME/.config/fastfetch"
+		cp "$root_dir"/build/fastfetch/* "$R/home/$USERNAME/.config/fastfetch/"
+	fi
+	in_root chown -R "$USERNAME:$USERNAME" "/home/$USERNAME/Pictures" "/home/$USERNAME/.config/fastfetch" 2>/dev/null || true
 	# MOTD.
 	[ -s "$root_dir/build/rebutos-motd.ansi" ] && install -m644 "$root_dir/build/rebutos-motd.ansi" "$R/etc/motd"
 	# Device layer (bt address, power key, keyboard Esc, polkit, sshd, kmscon, Hyprland overrides).
