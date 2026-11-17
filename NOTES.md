@@ -297,3 +297,29 @@ Notes for phase 1:
   18d1:d001 -> RNDIS, the host got 172.16.42.2, `telnet 172.16.42.1` reaches the pmOS debug shell.
   Screen: plain white (simpledrm fb0 registered at 0x9c000000; console not visible yet).
   dmesg saved to build/firstboot/dmesg-raw.txt (gitignored: contains device serials).
+
+## 2026-11-17 — panel white then black on the first boot: cause and fix (not flashed)
+
+Measured on the running tablet (read-only), full report in
+`.superpowers/sdd/2026-11-17-phase0-preparation/panel-report.md`:
+
+- dispcc had no consumer: its sync_state powered the MDSS GDSC off 0.36 s after it was registered
+  (`pd_ignore_unused` does not cover genpd sync_state);
+- rpmhpd sync_state lowered MMCX to low_svs (camcc vote) under a 300 MHz MDP clock;
+- L9A (DSI 1.2 V) is shared with the UFS PHY, which released it on runtime suspend.
+
+The panel module kept its power (GPIO 135), reset (GPIO 82) and TCON RDY (GPIO 26) all along: no panel rail was
+cut out of order, repeating the boot is judged safe.
+
+Fix: `linux` 5954f55b7 — the simple-framebuffer node holds MMCX (nominal), the MDSS GDSC, L5A and L9A.
+`pmaports` aa928ac — kernel r4 (patch 0004), device r6 (`regulator_ignore_unused` on the cmdline).
+
+| File | sha256 (first 16) |
+|---|---|
+| `build/recovery-shim.img` | `aedae4cd8b5b8a11` |
+| `build/recovery-shim-signed.img` | `2f315345ffefdc96` |
+| `build/shim-Image` | `674280aef1829b0d` |
+
+Expected on screen next time: the bootloader's last picture, steady. The kernel console needs an MDSS/DSI and
+panel driver (command-mode panel: nobody sends frames). Check after boot: `mdss_gdsc` on, `mmcx` at 256,
+`vreg_l9a_1p2` enabled with a framebuffer consumer.
