@@ -1833,3 +1833,32 @@ Kexec test from r22 over Wi-Fi (.166, MAC pinned), wall charger, backlight 0
 - inhibit-charge: CNFG_00 0x14, CNFG_09 0x77 (CHG_EN 0), DTLS_01 0x38, battery -8..+16 mA,
   "Not charging"; auto: +1.48 A within 10 s.
 - Reboot to BOOT: 7.3.4-r22, 450 mA / 1800 mA, charging +0.48 A, Wi-Fi .166, hci0, no failed units.
+
+## 2026-11-18T21:46:17+07:00 flash
+- BOOT: e6d92efbaff094194ade69be0e8359a9415c650bdbcb1e73e99896da82d1651f build/archive/boot-shim-r24-e6d92efb.img
+
+## 2026-11-18 — Omarchy package state repaired (tablet "poubelle", BOOT r24)
+
+Symptom: `pacman -S base-devel rust nodejs npm` failed (targets not found, then openssl 4.1.0
+breaking libssl.so=3 users). Cause: the sync databases on the tablet were the live Arch Linux ARM
+ones of 2026-11-17 (core/extra with openssl 4.1.0, aquamarine 0.16, rust 1.100), left from the image
+build (the first setup runs had the live ALARM mirror); the configured Omarchy stable mirror
+(arm-stable-mirror.omarchy.org, snapshot of 2026-10-20, openssl 3.6.5) is older, so pacman never
+replaced them (If-Modified-Since), and later installs (GNOME, Firefox, gstreamer, kmscon…) mixed in
+newer packages. Fixed by forcing the stable databases and a full upgrade/downgrade to the snapshot:
+`sudo env OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman -Syyuu --ignore firefox` (Omarchy's hook refuses
+direct -Syu without that variable). 29 packages: nodejs 26.12 + 3 deps added, 15 downgraded to the
+snapshot (gstreamer family 1.28.8, webkitgtk-6.0 2.54.1, kmscon 10.0.4, libgdm, libical, bluez-obex,
+imlib2, libshout, libgmobile, extension-manager 0.6.5, xdg-desktop-portal-gnome), Firefox 160 kept
+(profile already used by 160). No kernel, boot loader or our packages touched (linux-gts7xl r24,
+hexagonrpcd); module dirs 7.3.4, r20-r24 kept; no .pacnew; IgnorePkg, refusal hook, udev rules,
+PipeWire/WirePlumber protection, write-boot dry run intact. `pacman -Dk` clean, `-Su` empty,
+rust/nodejs/npm/base-devel resolve. Pacman's Landlock sandbox works on r24 (no --disable-sandbox).
+Backup before: `build/backup-omarchy-20261118/` (root.tar.zst 5.3 GB, 232540 entries read back,
+pacman -Q / -Qe lists; local only). After a reboot (BOOT r24): sudo, Wi-Fi, GNOME (gbm renderer on
+the msm card, GMU loaded), default sink "Speakers (protected)", ADSP, charger safety monitor,
+hexagonrpcd-sdsp and iio-sensor-proxy active, kmscon 10.0.4 on tty2 with font 28, 0 BTF errors,
+no failed unit.
+Rule from now on: install with `pacman -S` only after the databases match the channel (no mirror
+fallbacks in /etc/pacman.d/mirrorlist); system updates through `omarchy update` (untested here:
+it runs Omarchy's migrations) or the command above.
