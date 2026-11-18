@@ -1862,3 +1862,10 @@ no failed unit.
 Rule from now on: install with `pacman -S` only after the databases match the channel (no mirror
 fallbacks in /etc/pacman.d/mirrorlist); system updates through `omarchy update` (untested here:
 it runs Omarchy's migrations) or the command above.
+Build script fixed so a new image cannot ship them again: `tools/omarchy-pacman-sync.sh`
+(`refresh_sync_dbs`, called at the end of `setup` and of `device`) refuses to run while the live
+ALARM mirror is still in the mirrorlist, deletes every sync database, runs `pacman -Syy` against the
+stable mirrors, removes stray databases (the build-only [offline] repo) and fails if an installed
+package is newer than the snapshot (Firefox included) unless it is listed in `ALLOW_NEWER_PKGS`
+(empty by default). The live ALARM mirror stays a download fallback for files the stable mirror
+404s, same version only. Tests: tests/test_omarchy_pacman_sync.py. Not yet run in a full image build.

@@ -31,6 +31,8 @@ ZAP=${ZAP:-$root_dir/build/firmware-gpu/a650_zap.mbn}
 USERNAME=${USERNAME:-tarpediem}
 PASSWORD_FILE=${PASSWORD_FILE:-$WORK/credentials/password}
 DEV=$root_dir/arch/gts7xl-device
+# shellcheck source=tools/omarchy-pacman-sync.sh
+. "$root_dir/tools/omarchy-pacman-sync.sh"
 log() { echo "[$(date +%T)] $*"; }
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 # Run everything in a private mount namespace: no mount or unmount made here can reach the
@@ -191,6 +193,9 @@ setup() {
 	printf '[Autologin]\nUser=%s\nSession=omarchy.desktop\n' "$USERNAME" > "$R/etc/sddm.conf.d/autologin.conf"
 	in_root systemctl enable sddm.service sshd.service NetworkManager.service 2>/dev/null || in_root systemctl enable sddm.service sshd.service
 	ln -sfn ../run/systemd/resolve/stub-resolv.conf "$R/etc/resolv.conf"
+	# Sync databases from the stable mirrors only (the steps above used the live ALARM mirror
+	# as a download fallback and the build-only [offline] repo).
+	refresh_sync_dbs
 	log "setup done"
 }
 
@@ -256,6 +261,9 @@ device() {
 	# download fallback during this step only (signed packages).
 	cp "$R/etc/pacman.d/mirrorlist" "$R/tmp/mirrorlist.stable"
 	echo 'Server = http://mirror.archlinuxarm.org/$arch/$repo' >> "$R/etc/pacman.d/mirrorlist"
+	# These come from the stable snapshot's databases (refreshed at the end of setup); the
+	# live mirror only serves the same file when the stable one 404s it. Firefox is the
+	# snapshot's version too: refresh_sync_dbs below refuses anything newer.
 	for n in alsa-utils pipewire-alsa pipewire-pulse btop firefox; do
 		if in_root pacman -Q "$n" >/dev/null 2>&1; then log "present $n"; continue; fi
 		in_root pacman -S --noconfirm --needed "$n" > "$WORK/pkg-$n.log" 2>&1 && log "installed $n" || log "FAILED $n (see $WORK/pkg-$n.log)"
@@ -325,6 +333,7 @@ device() {
 		rm -rf "$t"; log "Bluetooth identity and pairings carried over"
 	fi
 	in_root ufw allow ssh >/dev/null 2>&1 || true
+	refresh_sync_dbs
 	sed -i '/^DisableSandbox$/d' "$R/etc/pacman.conf"
 	log "device layer installed"
 }
