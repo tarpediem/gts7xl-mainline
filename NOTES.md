@@ -1968,3 +1968,33 @@ boost is unreachable until that configuration is done (writes to the USB-C firmw
 design, needs the owner's approval). Host mode with a self-powered hub (manual role) untested:
 no powered hub. Script stopped before its boost step; back on r24 (uname r24, no failed units,
 Wi-Fi up, charger safety monitor up). r25 not flashed.
+
+## 2026-11-18 — Waydroid on Omarchy (tablet "poubelle", BOOT r24)
+
+Installed from the stable repos: waydroid 1.6.3, lxc 7.0.0, python-gbinder 1.3.1, dnsmasq (plus
+strace for debugging). Images: official LineageOS 20 arm64 GAPPS system (2026-09-27) + MAINLINE
+vendor (2026-10-22) through `waydroid init -f -s GAPPS`; waydroid checks each zip's sha256
+against the OTA json (`Validating system image`). Static binder devices (no binderfs) work:
+waydroid.cfg binder/vndbinder/hwbinder = the static /dev nodes, protocol aidl3.
+Boot loop root cause: qemu-user-static-binfmt (installed with the Omarchy package set) registers
+`qemu-arm` in binfmt_misc, so Waydroid's 32-bit vendor HALs (android.hardware.audio.service,
+camera provider 2.7 external) ran under qemu-arm, which cannot pass binder ioctls
+(BINDER_VERSION -> ENOTTY, "hw-ProcessState: Binder driver could not be opened"). audioserver
+never found media.audio_policy and the system_server watchdog restarted it every ~2.5 min.
+Fix: /etc/binfmt.d/qemu-{arm,armeb}-static.conf masked (comment only) and the two entries
+unregistered (`echo -1 > /proc/sys/fs/binfmt_misc/qemu-arm`); the CPU runs AArch32 natively
+(CONFIG_COMPAT=y). Boot completes in ~20 s. Device layer: arch/gts7xl-device installs the masks.
+Network: ufw (INPUT/FORWARD drop) blocked the container's DHCP. Rules added (also in
+gts7xl-firstboot for new images): `ufw allow in on waydroid0`, `ufw route allow in on waydroid0`,
+`ufw route allow out on waydroid0`. Waydroid's own nft table does the NAT (masquerade
+192.168.240.0/24). Container 192.168.240.112, Internet and DNS OK.
+GPU: SurfaceFlinger GLES "freedreno, FD650, OpenGL ES 3.2 Mesa 26.0.8" (gralloc minigbm gbm,
+egl mesa, vulkan freedreno). Audio HAL up, PulseAudio socket of the user session mapped
+(playback not tested, owner's audio left alone). Multi-window: persist.waydroid.multi_windows
+true. F-Droid 1.x official APK (PGP signature by the F-Droid release key 37D2C987...2E89, APK
+signing cert SHA-256 43:23:8D:51...CC:AB) installed. Play Store present; device registration
+for the uncertified-device page is done by the owner (Android ID not recorded here).
+Kernel gaps for r26 (Android netd firewall rules fail; basic networking unaffected):
+NETFILTER_XT_MATCH_{OWNER,BPF,CONNMARK,SOCKET,IPRANGE,QUOTA}, NETFILTER_XT_TARGET_{MARK,
+CONNMARK,CT,IDLETIMER,NFLOG}, NETFILTER_XT_CONNMARK; the legacy iptable_*/ip6table_* modules
+exist (=m) but are not loaded (the container cannot modprobe) -> load them via modules-load.d.

@@ -1,11 +1,16 @@
 #!/bin/bash
 # First boot of the Omarchy image on the gts7xl: what could not run in the qemu-user build.
-# - Omarchy's firewall setup (ufw needs the real kernel), with SSH allowed first.
+# - Omarchy's firewall setup (ufw needs the real kernel), with SSH allowed first, plus the
+#   rules Waydroid's bridge needs.
 set -u
 log() { echo "gts7xl-firstboot: $*"; }
 ufw allow ssh || log "ufw allow ssh failed"
 bash /usr/share/omarchy/install/config/firewall.sh || log "Omarchy firewall.sh failed"
 ufw allow ssh
+# Waydroid (if installed later): DHCP/DNS from its bridge and routed (NAT) traffic.
+ufw allow in on waydroid0 comment "waydroid: DHCP/DNS from the Android container"
+ufw route allow in on waydroid0 comment "waydroid: container traffic out (NAT)"
+ufw route allow out on waydroid0 comment "waydroid: replies to the container"
 ufw --force enable || log "ufw enable failed"
 systemctl disable gts7xl-firstboot.service
 log done

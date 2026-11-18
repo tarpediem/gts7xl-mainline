@@ -23,6 +23,9 @@ inst 644 gts7xl-firstboot.service usr/lib/systemd/system/gts7xl-firstboot.servic
 inst 755 gts7xl-osk usr/bin/gts7xl-osk
 inst 644 70-bt-keyboard-esc.hwdb etc/udev/hwdb.d/70-bt-keyboard-esc.hwdb
 inst 644 90-gts7xl-udisks-ignore.rules etc/udev/rules.d/90-gts7xl-udisks-ignore.rules
+# Same-named files in /etc/binfmt.d mask qemu-user-static-binfmt's ARM32 entries.
+inst 644 gts7xl-no-qemu-arm.binfmt etc/binfmt.d/qemu-arm-static.conf
+inst 644 gts7xl-no-qemu-arm.binfmt etc/binfmt.d/qemu-armeb-static.conf
 install -D -m440 "$f/10-gts7xl-wheel.sudoers" "$R/etc/sudoers.d/10-gts7xl-wheel"
 inst 644 00-gts7xl-no-foreign-kernel.hook usr/share/libalpm/hooks/00-gts7xl-no-foreign-kernel.hook
 inst 755 gts7xl-pacman-ignore "home/$U/.config/omarchy/hooks/pre-refresh-pacman.d/gts7xl-ignorepkg"

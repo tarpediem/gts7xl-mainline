@@ -1,0 +1,3 @@
+# gts7xl: no qemu-arm binfmt. The SM8250 runs ARM32 natively (AArch32 EL0); qemu-user
+# cannot pass binder ioctls, so Waydroid's 32-bit HALs (audio, camera) died and Android
+# boot-looped (system_server watchdog waiting for media.audio_policy).
