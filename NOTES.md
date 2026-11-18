@@ -1720,3 +1720,11 @@ Flash waiter (scratchpad flash-r22-wait.sh) armed for Download Mode, 90 min.
 
     printf 'FLASH\n' | FLASH_SSH="ssh localhost" tools/flash.sh --pit build/gts7xl.pit --keep-vbmeta \
         BOOT=build/archive/boot-shim-r22-987296de.img
+
+## 2026-11-18T08:03:32+07:00 flash
+- BOOT: 987296dede7a9bc022db124a4509b41df8a42de781d4dd8e68dd067e74c481a0 build/archive/boot-shim-r22-987296de.img
+
+## 2026-11-18T08:03:32+07:00 flash
+- BOOT: 987296dede7a9bc022db124a4509b41df8a42de781d4dd8e68dd067e74c481a0 build/archive/boot-shim-r22-987296de.img
+- heimdall upload OK (flash exit 0). The tablet did NOT come back on USB (no USB device at all)
+  or Wi-Fi within 12 min (checked until 08:15): owner to look at the screen.
