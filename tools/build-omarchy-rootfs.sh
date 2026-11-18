@@ -17,6 +17,7 @@
 #   ZAP        [build/firmware-gpu/a650_zap.mbn]
 #   HEXAGONRPCD_PKG [newest build/omarchy/pkg-r2*/hexagonrpcd-*.pkg.tar.*]  (sensors)
 #   USERNAME   [tarpediem]   PASSWORD_FILE [WORK/credentials/password] (generated, 600)
+#   GTS7XL_WIFI_MAC [unset]  pin the Wi-Fi MAC (NetworkManager conf.d; keeps the DHCP lease)
 # Nothing here talks to the tablet.
 set -euo pipefail
 

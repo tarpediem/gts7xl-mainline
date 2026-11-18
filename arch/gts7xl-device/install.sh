@@ -54,6 +54,13 @@ chroot "$R" systemctl enable gts7xl-bt-addr.service gts7xl-powerkey.service gts7
 # not owned by a package and not the running kernel, at each boot: it wiped the BOOT (r20) and
 # RECOVERY (7.3.4) module dirs kept outside pacman on 2026-11-17 (no Wi-Fi/audio after reboot).
 ln -sfn /dev/null "$R/etc/systemd/system/linux-modules-cleanup.service"
+# Wi-Fi MAC: the QCA6390 gets a new random address at each boot (no NV MAC), so DHCP leases
+# move. GTS7XL_WIFI_MAC (local build setting, not in the repo) pins it for every Wi-Fi
+# connection on wlp1s0; unset: NetworkManager's default.
+if [ -n "${GTS7XL_WIFI_MAC:-}" ]; then
+	printf '[connection-gts7xl-wifi-mac]\nmatch-device=interface-name:wlp1s0\nwifi.cloned-mac-address=%s\n' \
+		"$GTS7XL_WIFI_MAC" | install -D -m644 /dev/stdin "$R/etc/NetworkManager/conf.d/50-gts7xl-wifi-mac.conf"
+fi
 # zram is built in (CONFIG_ZRAM=y): Omarchy's zram-generator config applies.
 chroot "$R" systemctl unmask systemd-zram-setup@zram0.service >/dev/null 2>&1 || true
 # Hyprland overrides (Omarchy 4.5 uses a Lua config): ~/.config/hypr/gts7xl.lua, required last.

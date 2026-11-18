@@ -80,3 +80,44 @@ def test_dts_dcp_limit_within_stock():
     m = re.search(r"maxim,dcp-input-current-limit-microamp = <(\d+)>;", dts.read_text())
     # stock cable-info default_input_current 0x708 = 1800 mA
     assert m and int(m.group(1)) <= 1800000
+
+
+@needs_linux
+def test_dcp_charge_current_only_on_positive_detection():
+    src = CHG.read_text()
+    body = re.search(r"static unsigned int max77705_cable_charge_current\(.*?\n}\n", src, re.S).group(0)
+    # 1.5 A only when online, configured and BC1.2 says DCP; the battery's value otherwise
+    assert "online && chg->cc_dcp_ua" in body
+    assert "== POWER_SUPPLY_USB_TYPE_DCP" in body
+    assert body.count("return chg->cc_dcp_ua;") == 1
+    assert body.rstrip().endswith("return chg->cc_sdp_ua;\n}")
+    # hard ceiling, a larger DT value is dropped (0 = not used)
+    assert "#define MAX77705_CC_DCP_CEIL_UA	1500000" in src
+    assert "chg->cc_dcp_ua > MAX77705_CC_DCP_CEIL_UA" in src
+    assert "chg->cc_dcp_ua = 0;" in src
+
+
+@needs_linux
+def test_charge_current_reference_follows_cable():
+    body = re.search(r"static void max77705_safety_check\(.*?\n}\n", CHG.read_text(), re.S).group(0)
+    sel = body.index("max77705_cable_charge_current(chg, online)")
+    # the per-cable value becomes the reference before the limits check that enforces it
+    assert body.index("chg->cc_max_ua = ref;") > sel
+    assert body.index("max77705_safety_limits_ok(chg)") > sel
+    lim = re.search(r"static int max77705_safety_limits_ok\(.*?\n}\n", CHG.read_text(), re.S).group(0)
+    assert "cc <= max77705_cc_ua_to_reg(chg->cc_max_ua)" in lim
+
+
+def test_dts_dcp_charge_current_within_stock():
+    dts = (LINUX / "arch" / "arm64" / "boot" / "dts" / "qcom" / "sm8250-samsung-gts7xl.dts")
+    if not dts.exists():
+        pytest.skip("needs the linux/ checkout")
+    text = dts.read_text()
+    m = re.search(r"maxim,dcp-constant-charge-current-microamp = <(\d+)>;", text)
+    # stock TA (cable 3, in no current_group): cable-info default_charging_current 0x834 = 2100 mA
+    stock = re.search(r"default_charging_current = <(0x\w+)>;",
+                      (ROOT / "reference" / "stock-overlay-01-id0-rev0.dts").read_text())
+    assert stock and int(stock.group(1), 16) == 2100
+    assert m and int(m.group(1)) <= 1500000 <= 2100 * 1000
+    # every other cable keeps the battery's 450 mA
+    assert re.search(r"constant-charge-current-max-microamp = <450000>;", text)

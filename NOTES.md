@@ -1728,3 +1728,63 @@ Flash waiter (scratchpad flash-r22-wait.sh) armed for Download Mode, 90 min.
 - BOOT: 987296dede7a9bc022db124a4509b41df8a42de781d4dd8e68dd067e74c481a0 build/archive/boot-shim-r22-987296de.img
 - heimdall upload OK (flash exit 0). The tablet did NOT come back on USB (no USB device at all)
   or Wi-Fi within 12 min (checked until 08:15): owner to look at the screen.
+
+## 2026-11-18 — r23: 1.5 A charge current on a wall charger (kexec-tested from r22, not flashed)
+
+Owner ("Oui, 1,5 A"): on the 100 W USB-PD wall charger (no PD contract, 5 V, BC1.2 DCP, input
+1800 mA) the 450 mA charge current was far too slow. Change: the fast-charge current now follows
+the cable like the input limit. Only a positively detected DCP (VBUS + CHGTYP DCP in BC_STATUS)
+gives `maxim,dcp-constant-charge-current-microamp` = 1500 mA; SDP, CDP, unknown types, no VBUS
+and read errors keep the battery's 450 mA. The selected value is the safety monitor's reference
+(written on a cable change, otherwise "at or under" is enforced and rewritten). Driver ceiling
+1500 mA (`MAX77705_CC_DCP_CEIL_UA`; a larger DT value is dropped with a warning).
+
+Stock, for the record: a Samsung TA is cable 3 (`SEC_BATTERY_CABLE_TA`), in none of the
+cable-info current groups, so it gets `default_input_current` 0x708 = 1800 mA and
+`default_charging_current` 0x834 = 2100 mA (reference/stock-overlay-01-id0-rev0.dts, cable-info;
+vendor battery_v2/sec_battery_dt.c). Battery `max_charging_current` 0xc4e = 3150 mA.
+1500 mA <= 2100 mA. Every other limit unchanged: CV 4.27 V (reg 0x0b), battery 2..41 C,
+10 h timer (at 1.5 A an 80 % charge of 10090 mAh takes < 6 h), 80/75 % cap, watchdog, B1 off
+path (MODE 0x04 + CHG_EN 0).
+
+linux 58cee566c (driver + binding), 7bb5de6f5 (DTS) = aport patches 0042-0043, pkgrel 23,
+release **7.3.4-r23**. Tests: tests/test_kernel_charger.py (DCP charge current only on positive
+detection, ceiling, reference before the limit check), DTS value <= 1500000 <= stock 2100 mA.
+
+| File | sha256 |
+|---|---|
+| `build/archive/boot-shim-r23-657ade6d.img` (BOOT) | `657ade6d5cd92de0bd3c314d6f615ec44a07f1dd118d109ac1cce62ad83e6acd` |
+| `build/archive/recovery-shim-r23-c973b026.img` (RECOVERY, not to flash) | `c973b026b5e3a42939241453557d4dc1173c267a34d0ee5b95b376f2728a6660` |
+| `build/charge-r23/linux-samsung-gts7xl-7.3.4-r23.apk` | `eed9a346a64e4b02a8aa6c04a189a1cbce53b4206f80e3be1d14df3976e0df1c` |
+
+BOOT image: `apk add -u` in the rootfs chroot, `pmbootstrap export`,
+`tools/build-recovery-shim.sh --cmdline-from build/archive/boot-shim-r22-987296de.img` (cmdline
+md5 identical to r22). All pmbootstrap calls in `sudo unshare --mount --propagation private`.
+Omarchy: `linux-gts7xl 7.3.4.r23-1` installed (build/omarchy/pkg-r23, hook dry run, WRITE_BOOT=no:
+BOOT not written). The upgrade removed the r22 package's 7.3.4-r22 module dir: it was copied
+aside before and put back (depmod), so 7.3.4, -r20, -r21, -r22 (outside pacman) and -r23 exist.
+
+Kexec test from r22 over Wi-Fi, tablet on the wall charger, screen backlight 0
+(tools/charge-dcp-test.sh, build/charge-dcp-test-082056):
+- `safety monitor: CC 450000 uA (DCP 1500000 uA), CHGIN 475000 uA (DCP 1800000 uA), CV reg 0xb,
+  battery 2..41 C, timer 36000 s, capacity 75..80 %`, then `input limit 1800000 uA (USB type 2)`
+  and `charge current 1500000 uA (USB type 2)`.
+- CNFG_02 (0xB9) = 0x5e: CC field 0x1e = 1500 mA, read back the whole time; CNFG_09 0xc7
+  (CHG_EN, 1800 mA), DTLS_01 0x31 (CC), health Good.
+- 10 min, 40 samples: battery current mean +1.12 A (instant 0.86..1.25 A), FG average +1.24 A;
+  capacity 15 -> 17 %; battery 28.3 -> 30.1 C. Before (r22, 450 mA): +0.45..0.47 A.
+- inhibit-charge: CNFG_00 0x14, DTLS_01 0x38 (off), battery -20..+23 mA, "Not charging";
+  auto again: +1.16 A within 10 s.
+- Reboot to BOOT: 7.3.4-r22, CC 450000, charging +0.47 A, Wi-Fi connected, hci0, no failed units.
+
+Why ~1.2 A and not 1.4 A: CC is set to 1500 mA but the input side is capped at 1800 mA x ~5 V
+(~9 W) and also feeds the running system; AICL is not active (CHG_INT_OK 0xdf, AICL_OK set).
+The charger's USB-C block reports the wall charger's Type-C advertisement CC_STATUS0 (0x0A) =
+0x71: CCIStat 3 = **Rp 3.0 A**, sink, CC1. Honouring it (step 2, below) is what raises input.
+
+Wi-Fi MAC: the QCA6390 address changes at each boot, so the DHCP address moved (.195, .196, .197
+during this test; the test script now finds the tablet by mDNS, `poubelle.local`). Pinned in the
+tablet's NetworkManager connection (cloned MAC = the MAC of the router's static lease), back on the
+static lease afterwards. Image build: `GTS7XL_WIFI_MAC` (local setting, build/omarchy/local-settings.env,
+not in git) makes arch/gts7xl-device/install.sh write
+`/etc/NetworkManager/conf.d/50-gts7xl-wifi-mac.conf` for wlp1s0.
