@@ -1957,3 +1957,14 @@ the USB-C port (CC_STATUS0 0x00, on battery), boost never enabled:
 
 Not done yet (owner needed): host with a real device through an OTG adapter, a CCStat SOURCE
 reading on this firmware (F15), the boost itself, the PC gadget link after a role round trip.
+
+r25 hands-on (owner present, kexec from r24, build/otg-role-test-225829): OTG adapter (USB-C
+plug -> USB-A) with a USB keyboard, no charger. CC_STATUS0 = 0x40 three reads in a row: CCPinStat
+1 (something on CC1) but **CCStat 0 (no connection)**, BC_STATUS 0x01 (no VBUS), so the role
+stayed device and the VBUS output was never switched on (by design: it needs CCStat SOURCE).
+The MAX77705 USB-C firmware does not present Rp / attach as source by itself: stock configures it
+at boot through the opcode mailbox (vendor max77705_usbc.c), our kernel only reads it. So the
+boost is unreachable until that configuration is done (writes to the USB-C firmware: separate
+design, needs the owner's approval). Host mode with a self-powered hub (manual role) untested:
+no powered hub. Script stopped before its boost step; back on r24 (uname r24, no failed units,
+Wi-Fi up, charger safety monitor up). r25 not flashed.
