@@ -8,8 +8,9 @@
 set -uo pipefail
 SP=${SP:-/tmp/claude-1000/-home-tarpediem-Work-samsung-gts7xl-mainline/8218a82d-737f-4327-a27f-5970ee3d04e8/scratchpad}
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-APK=${1:-$ROOT/build/sensors-k50/linux-samsung-gts7xl-7.3.4-r50.apk}
-REL=7.3.4-r50
+APK=${1:-$(ls -v "$ROOT"/build/sensors-k50/linux-samsung-gts7xl-7.3.4-r5*.apk | tail -1)}
+REL=$(basename "$APK" .apk); REL=${REL#linux-samsung-gts7xl-}
+PEN_SECS=${PEN_SECS:-60}
 OUT=$ROOT/build/sensors-k50-test-$(date +%H%M%S); mkdir -p "$OUT"
 O=(-i "$HOME/.ssh/gts7xl_ed25519" -o IdentitiesOnly=yes -o "UserKnownHostsFile=$SP/gts7xl_known_hosts" -o ConnectTimeout=5)
 T=tarpediem@172.16.42.1
@@ -24,7 +25,7 @@ K=$OUT/k; mkdir -p "$K"; tar xzf "$APK" -C "$K" boot usr/lib/modules 2>/dev/null
 exec 9>"$SP/tablet.lock"; flock -w 3600 9 || exit 1
 echo "sensors agent: kexec $REL (S Pen, rear camera probe), then reboot to BOOT ($(date +%T))" > "$SP/tablet.owner"
 log "lock taken"
-[ "$(s 'uname -r')" = 7.3.4-r20 ] || { log "not on r20"; : > "$SP/tablet.owner"; exit 1; }
+case "$(s 'uname -r')" in 7.3.4-r20|7.3.4-r21) ;; *) false;; esac || { log "not on the BOOT kernel (r20/r21)"; : > "$SP/tablet.owner"; exit 1; }
 
 # libcamera's cam tool for "cam -l" (Arch repo packages)
 r 'pacman -Q libcamera-tools >/dev/null 2>&1 || pacman -S --noconfirm --needed --disable-sandbox libcamera libcamera-ipa libcamera-tools 2>&1 | tail -2' | tee -a "$OUT/run.log"
@@ -55,6 +56,35 @@ for p in /sys/class/remoteproc/*; do echo "$(cat $p/name) $(cat $p/state)"; done
 systemctl is-active hexagonrpcd-sdsp iio-sensor-proxy
 timeout 8 ssccli --sensor accelerometer --timeout 2 2>&1 | grep measurement | head -2
 journalctl -b -k | grep -c "BTF: -22"; systemctl --failed --no-legend' 2>&1 | tee -a "$OUT/checks.txt"
+
+# Hands-on part (owner): pen and rotation, then Enter to go back to the BOOT kernel.
+cat <<MSG
+
+=== On the tablet now (test kernel $REL) ===
+1. S Pen: within the next $PEN_SECS seconds, hover the pen over the screen, then draw a few
+   strokes, touch the four corners, press the side button.
+2. Then turn the tablet: landscape, portrait both ways, upside down; watch GNOME rotate.
+MSG
+r "P=\$(grep -l 'W90xx' /sys/class/input/event*/device/name | head -1 | sed 's|/device/name||; s|.*/||'); echo pen=/dev/input/\$P
+grep w9021 /proc/interrupts | awk '{s=0; for(i=2;i<=9;i++) s+=\$i; print \"irq before:\", s}'
+timeout $PEN_SECS python3 - /dev/input/\$P <<'PY'
+import struct,sys,time
+f=open(sys.argv[1],'rb'); n={}; mn=[1<<30]*2; mx=[0]*2; pmax=0; keys=set()
+try:
+    while True:
+        t1,t2,ty,co,v=struct.unpack('llHHi',f.read(24))
+        n[(ty,co)]=n.get((ty,co),0)+1
+        if ty==3 and co in (0,1): mn[co]=min(mn[co],v); mx[co]=max(mx[co],v)
+        if ty==3 and co==24: pmax=max(pmax,v)
+        if ty==1 and v: keys.add(co)
+        if sum(n.values())%200==1: print('events', sum(n.values()), 'x', mn[0], mx[0], 'y', mn[1], mx[1], 'pmax', pmax, 'keys', sorted(keys), flush=True)
+except Exception: pass
+PY
+grep w9021 /proc/interrupts | awk '{s=0; for(i=2;i<=9;i++) s+=\$i; print \"irq after:\", s}'
+journalctl -b -k | grep -i 'w90xx' | tail -5" 2>&1 | tee -a "$OUT/pen.txt"
+echo "Rotation (iio-sensor-proxy), 30 s:" | tee -a "$OUT/rotation.txt"
+r 'timeout 30 monitor-sensor --accel 2>&1' | tee -a "$OUT/rotation.txt"
+if [ -t 0 ]; then read -r -p "Press Enter to reboot back to the BOOT kernel... " _; fi
 
 log "reboot to BOOT"; r 'systemd-run --on-active=2 systemctl reboot' > /dev/null 2>&1
 wait_down 60; wait_up 400 || { log "not back after reboot: owner needed, lock kept"; exit 2; }

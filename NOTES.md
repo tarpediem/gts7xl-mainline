@@ -1656,3 +1656,30 @@ Mics / USB-C headset (investigated only):
   in a private mount namespace) so nothing installs it by accident. Tablet keeps
   /usr/lib/modules/7.3.4-r50 (outside pacman), hexagonrpcd in /usr/local/bin, units/rules in /etc,
   libcamera + libcamera-tools installed, /root/sensors-config.aside (stock json, unserved).
+
+## 2026-11-18T06:57:01+07:00 flash
+- BOOT: fbb8aa1401e3c2c0f86d74f22c5ca37d0b0648011dfc4cd396726516f2401343 build/archive/boot-shim-r21-fbb8aa14.img
+
+### 2026-11-18 morning — owner test of r50 and fixes (r51, kexec-tested, not flashed)
+
+Owner (r50 from BOOT r21): S Pen did nothing in GNOME, rotation wrong. Causes and fixes:
+- **ADSP FastRPC flood** (~70000 `qcom_scm: Assign memory protection call failed -22` + fastrpc probe
+  -22 per boot): every **kexec'd** kernel (also the r21/r41 tests of the other agents) — the ADSP
+  remote heap still belongs to the LPASS VMs from the previous kernel, the probe's SCM assign fails
+  and the channel re-probes in a loop; real boots are clean. It also left systemd-udevd unresponsive
+  (`udevadm control --reload`: "Timer expired"), which most likely hid the pen from libinput/GNOME and
+  broke the hexagonrpcd start. Fix: DTS drops `memory-region`/`qcom,vmids` from the ADSP fastrpc node
+  (linux 0002 of extra3, aport 0041). r51 kexec: 0 SCM errors.
+- **hexagonrpcd not running**: `ConditionPathExists=/dev/fastrpc-sdsp` is checked before the SLPI is
+  up. Fix: udev starts it when the node appears (`80-fastrpc.rules` SYSTEMD_WANTS). r51: active.
+- **Rotation**: owner held it in the panel's landscape: SSC x = +8.8, y = -0.2, z = +3.9 m/s².
+  iio-sensor-proxy calls "normal" y = -g, so `ACCEL_MOUNT_MATRIX=0, 1, 0; -1, 0, 0; 0, 0, 1`.
+  r51 with the same pose: "orientation: normal".
+- **S Pen**: on the r50 boot after the owner's test the pen IRQ had fired 410 times (events were
+  produced). r51 driver also power-cycles the chip at probe (stock reset: off 100 ms, on 200 ms),
+  sends survey-exit (0x2d) before start (0x31), sets X/Y resolution 100 units/mm, logs
+  non-coordinate packets (after probe: one notification `0d 00 10 2d 10 03 …`, the survey-exit
+  reply). Pen strokes not yet seen by an agent (needs hands).
+r51 apk: build/sensors-k50/linux-samsung-gts7xl-7.3.4-r51.apk (sha256 ef1758a163e8e3db, pmaports
+gts7xl-sensors pkgrel 51, 0033-0041), out of the pmbootstrap repo. Rules updated live on the tablet
+(/etc/udev/rules.d/79-gts7xl-sensors.rules, 80-fastrpc.rules).

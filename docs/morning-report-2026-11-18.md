@@ -95,9 +95,17 @@ delete the r20 (your BOOT) and RECOVERY module folders: r20 then came up without
 and sound. They were restored and that cleanup service is now disabled on the tablet (and in the
 image build). Checked after the last reboot: r20 with Wi-Fi, Bluetooth and speakers.
 
-To try the test kernel again (10 minutes, ends back on r20): `tools/sensors-k50-test.sh
-build/sensors-k50/linux-samsung-gts7xl-7.3.4-r50.apk` from the PC (results in
-`build/sensors-k50-test-*/`).
+**Update after your morning test (fixed in test kernel r51, not flashed):**
+- Wrong rotation: the axes were turned by 90°; corrected from your test (the tablet in the same
+  pose now reads "normal").
+- S Pen and the missing sensor service: every test kernel started by kexec flooded the system
+  with an audio-DSP error (about 70 000 messages, the red text on screen), which jammed the
+  device manager, so GNOME probably never picked up the pen and the sensor service did not
+  start. Fixed (0 errors on r51), and the sensor service now starts when the sensor DSP is ready.
+- **To test (5 minutes, you hold the tablet):** in a terminal on the PC, in
+  `~/Work/samsung/gts7xl-mainline`: `tools/sensors-k50-test.sh` . When it prints "On the tablet now"
+  you have 60 s to hover and draw with the S Pen (corners, side button), then turn the tablet
+  around for 30 s; then press Enter in the terminal and the tablet goes back to r21.
 
 ## Audio (speakers, overnight, no sound played)
 
