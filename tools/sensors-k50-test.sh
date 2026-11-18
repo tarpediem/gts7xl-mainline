@@ -11,6 +11,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 APK=${1:-$(ls -v "$ROOT"/build/sensors-k50/linux-samsung-gts7xl-7.3.4-r5*.apk | tail -1)}
 REL=$(basename "$APK" .apk); REL=${REL#linux-samsung-gts7xl-}
 PEN_SECS=${PEN_SECS:-60}
+DTB_NAME=${DTB_NAME:-sm8250-samsung-gts7xl-rearcam.dtb}   # BOOT tree: DTB_NAME=sm8250-samsung-gts7xl.dtb
 OUT=$ROOT/build/sensors-k50-test-$(date +%H%M%S); mkdir -p "$OUT"
 O=(-i "$HOME/.ssh/gts7xl_ed25519" -o IdentitiesOnly=yes -o "UserKnownHostsFile=$SP/gts7xl_known_hosts" -o ConnectTimeout=5)
 T=tarpediem@172.16.42.1
@@ -32,7 +33,7 @@ r 'pacman -Q libcamera-tools >/dev/null 2>&1 || pacman -S --noconfirm --needed -
 tar -C "$K/usr/lib/modules" -cf - "$REL" | s "rm -rf /tmp/m50; mkdir /tmp/m50; tar -C /tmp/m50 -xf -"
 r "rm -rf /usr/lib/modules/$REL; cp -a /tmp/m50/$REL /usr/lib/modules/; chown -R root:root /usr/lib/modules/$REL; depmod -a $REL; rm -rf /tmp/m50; ls /usr/lib/modules" | tee -a "$OUT/run.log"
 r 'cat /sys/firmware/fdt' > "$OUT/running.fdt"
-python3 "$ROOT/tools/kexec_dtb.py" --new "$K/boot/dtbs/qcom/sm8250-samsung-gts7xl-rearcam.dtb" --running "$OUT/running.fdt" -o "$OUT/kexec.dtb" || exit 1
+python3 "$ROOT/tools/kexec_dtb.py" --new "$K/boot/dtbs/qcom/$DTB_NAME" --running "$OUT/running.fdt" -o "$OUT/kexec.dtb" || exit 1
 zcat "$K/boot/vmlinuz" > "$OUT/Image"
 scp -q "${O[@]}" "$OUT/Image" "$OUT/kexec.dtb" "$T:/tmp/" && scp -q "${O[@]}" "$(realpath "$ROOT/build/initramfs")" "$T:/tmp/initramfs-r50"
 r 'kexec -c -l /tmp/Image --dtb=/tmp/kexec.dtb --initrd=/tmp/initramfs-r50 --reuse-cmdline 2>&1 | grep -v kcore; cat /sys/kernel/kexec_loaded' | tee -a "$OUT/run.log"
@@ -55,7 +56,14 @@ command -v cam >/dev/null && timeout 20 cam -l 2>&1 | tail -8; command -v cam >/
 for p in /sys/class/remoteproc/*; do echo "$(cat $p/name) $(cat $p/state)"; done
 systemctl is-active hexagonrpcd-sdsp iio-sensor-proxy
 timeout 8 ssccli --sensor accelerometer --timeout 2 2>&1 | grep measurement | head -2
-journalctl -b -k | grep -c "BTF: -22"; systemctl --failed --no-legend' 2>&1 | tee -a "$OUT/checks.txt"
+journalctl -b -k | grep -c "BTF: -22"; systemctl --failed --no-legend
+echo scm_assign_errors=$(journalctl -b -k | grep -c "Assign memory protection")
+journalctl -b -k | grep -E "safety monitor" | cut -c1-140
+cat /sys/class/power_supply/max77705-charger/usb_type /sys/class/power_supply/max77705-charger/input_current_limit
+nmcli -t -f DEVICE,STATE dev | grep wlp; bluetoothctl list
+journalctl -b -k | grep -c -E "adsp is now up|Loaded GMU"
+grep -B1 -A3 -i "hall" /proc/bus/input/devices | grep -E "Name|SW="' 2>&1 | tee -a "$OUT/checks.txt"
+s 'export XDG_RUNTIME_DIR=/run/user/1000; wpctl status 2>/dev/null | grep -iE "speaker|protected" | head -3' 2>&1 | tee -a "$OUT/checks.txt"
 
 # Hands-on part (owner): pen and rotation, then Enter to go back to the BOOT kernel.
 cat <<MSG

@@ -15,6 +15,7 @@
 #   BACKUP     [newest build/backup-pmos-*]  pmOS rootfs backup (host keys, ssh key, boot fs)
 #   KERNEL_APK [newest linux-samsung-gts7xl apk in the pmbootstrap repo]
 #   ZAP        [build/firmware-gpu/a650_zap.mbn]
+#   HEXAGONRPCD_PKG [newest build/omarchy/pkg-r2*/hexagonrpcd-*.pkg.tar.*]  (sensors)
 #   USERNAME   [tarpediem]   PASSWORD_FILE [WORK/credentials/password] (generated, 600)
 # Nothing here talks to the tablet.
 set -euo pipefail
@@ -237,6 +238,19 @@ device() {
 		cp -a "$t"/usr "$R"/ ; rm -rf "$t"; log "audio files from $(basename "$a")"
 	done
 	chown -R 0:0 "$R/usr/lib/firmware/qcom/sm8250/samsung" "$R/usr/share/alsa/ucm2/Samsung" 2>/dev/null || true
+	# Sensors (r22): hexagonrpcd package (arch/hexagonrpcd, built on the tablet with makepkg), then
+	# the SLPI firmware and the hexagonrpcd file tree with this tablet's registry (local files:
+	# tools/extract-dsp.py slpi, tools/build-hexagonfs.sh; tools/install-sensors.sh).
+	HEXAGONRPCD_PKG=${HEXAGONRPCD_PKG:-$(ls "$root_dir"/build/omarchy/pkg-r2*/hexagonrpcd-*-aarch64.pkg.tar.* 2>/dev/null | tail -1)}
+	if [ -n "$HEXAGONRPCD_PKG" ] && [ -s "$root_dir/build/firmware-slpi/slpi.mbn" ] && [ -d "$root_dir/build/hexagonfs-gts7xl" ]; then
+		cp "$HEXAGONRPCD_PKG" "$R/tmp/"
+		in_root pacman -U --noconfirm --disable-sandbox "/tmp/$(basename "$HEXAGONRPCD_PKG")" > "$WORK/pkg-hexagonrpcd.log" 2>&1 &&
+			log "installed $(basename "$HEXAGONRPCD_PKG")" || log "FAILED hexagonrpcd (see $WORK/pkg-hexagonrpcd.log)"
+		rm -f "$R/tmp/$(basename "$HEXAGONRPCD_PKG")"
+		"$root_dir/tools/install-sensors.sh" "$R" && log "sensors: SLPI firmware + hexagonfs installed"
+	else
+		log "sensors: hexagonrpcd package, build/firmware-slpi or build/hexagonfs-gts7xl missing, skipped"
+	fi
 	# Omarchy's stable ALARM mirror 404s some files it lists: official ALARM mirror as a
 	# download fallback during this step only (signed packages).
 	cp "$R/etc/pacman.d/mirrorlist" "$R/tmp/mirrorlist.stable"
