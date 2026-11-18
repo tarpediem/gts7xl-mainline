@@ -107,6 +107,15 @@ image build). Checked after the last reboot: r20 with Wi-Fi, Bluetooth and speak
   you have 60 s to hover and draw with the S Pen (corners, side button), then turn the tablet
   around for 30 s; then press Enter in the terminal and the tablet goes back to r21.
 
+## Kernel r22 (sensors, S Pen, rotation) — ready to flash
+
+r22 = r21 + rotation, S Pen, cover switches and the fix for the red error flood. Kexec-tested
+from r21: Wi-Fi, Bluetooth, speakers, charging, GPU all as before. Omarchy already has the r22
+package installed. To flash: put the tablet in **Download Mode** (power off, unplug, hold
+Vol Up + Vol Down while plugging the PC cable, then a short Vol Up); the PC flashes BOOT r22 by
+itself and checks the tablet after it reboots. Rollback: same with r21 (`boot-shim-r21-fbb8aa14.img`)
+or Vol Up + Power for RECOVERY.
+
 ## Audio (speakers, overnight, no sound played)
 
 - **Crackle**: the data path is clean. A silent loopback test (speakers muted, the amplifiers

@@ -1683,3 +1683,40 @@ Owner (r50 from BOOT r21): S Pen did nothing in GNOME, rotation wrong. Causes an
 r51 apk: build/sensors-k50/linux-samsung-gts7xl-7.3.4-r51.apk (sha256 ef1758a163e8e3db, pmaports
 gts7xl-sensors pkgrel 51, 0033-0041), out of the pmbootstrap repo. Rules updated live on the tablet
 (/etc/udev/rules.d/79-gts7xl-sensors.rules, 80-fastrpc.rules).
+
+## 2026-11-18 — r22: r21 + sensors, hall, S Pen, ADSP FastRPC kexec fix (kexec-tested from r21, not flashed yet)
+
+Owner after the r51 test: S Pen and rotation work (confirmed by the owner; the agent's capture
+windows missed it: re-check pen IRQ counts and the four orientations with logs on the next boot).
+linux `gts7xl` fast-forwarded from `gts7xl-sensors` (top = 2f8d5bf0d, the ADSP FastRPC DT fix);
+pmaports `gts7xl` fast-forwarded from `gts7xl-sensors` + cde68e940 (pkgrel 22): patches 0033-0041,
+TOUCHSCREEN_WACOM_W90XX=m, VIDEO_S5K3M5=m. Release **7.3.4-r22**. Images: `apk add -u` in the rootfs
+chroot (initramfs with 7.3.4-r22 modules), `pmbootstrap export build/`,
+`tools/build-recovery-shim.sh --cmdline-from build/archive/boot-shim-r21-fbb8aa14.img` (same cmdline,
+md5 checked). All pmbootstrap calls in `sudo unshare --mount --propagation private`.
+
+| File | sha256 |
+|---|---|
+| `build/archive/boot-shim-r22-987296de.img` (BOOT) | `987296dede7a9bc022db124a4509b41df8a42de781d4dd8e68dd067e74c481a0` |
+| `build/archive/recovery-shim-r22-c9b40d46.img` (RECOVERY, not to flash) | `c9b40d465905dccb…` |
+| `build/sensors-k50/linux-samsung-gts7xl-7.3.4-r22.apk` | (same as the pmbootstrap repo) |
+
+**ADSP FastRPC DT change (audio agent):** `&adsp { glink-edge { fastrpc { /delete-property/
+memory-region; /delete-property/ qcom,vmids; }; }; }` — the kexec'd-kernel SCM assign loop.
+
+Kexec test from r21 (build/sensors-k50-test-075738, BOOT DTB): 7.3.4-r22; S Pen probes (fw 0x403d,
+26712x16714); slpi + adsp running, hexagonrpcd + iio-sensor-proxy active, accelerometer reads,
+orientation "normal" in the usual pose; Hall sensors input; 0 SCM assign errors, 0 BTF; charger
+safety-monitor line, [SDP], 475000; wlp1s0 connected; hci0 same address; ADSP + GMU (2); speakers
+sink + protection filter present; back on r21.
+
+Omarchy on the tablet: `linux-gts7xl 7.3.4.r22-1` (pkg build/omarchy/pkg-r22, BOOT image
+987296de, hook dry run OK: BOOT=/dev/sda23, WRITE_BOOT=no), module dirs 7.3.4, -r20, -r21, -r22
+(r21 preserved across the upgrade, linux-modules-cleanup masked; r50/r51 test dirs removed);
+`hexagonrpcd 0.5.0.r20.gda7a374-1` (built on the tablet from arch/hexagonrpcd, Samsung paths patch,
+sdsp unit as user fastrpc, udev start); the hand-installed test copies removed. Image build:
+tools/build-omarchy-rootfs.sh installs the hexagonrpcd package + tools/install-sensors.sh.
+Flash waiter (scratchpad flash-r22-wait.sh) armed for Download Mode, 90 min.
+
+    printf 'FLASH\n' | FLASH_SSH="ssh localhost" tools/flash.sh --pit build/gts7xl.pit --keep-vbmeta \
+        BOOT=build/archive/boot-shim-r22-987296de.img
