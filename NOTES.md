@@ -1788,3 +1788,48 @@ tablet's NetworkManager connection (cloned MAC = the MAC of the router's static 
 static lease afterwards. Image build: `GTS7XL_WIFI_MAC` (local setting, build/omarchy/local-settings.env,
 not in git) makes arch/gts7xl-device/install.sh write
 `/etc/NetworkManager/conf.d/50-gts7xl-wifi-mac.conf` for wlp1s0.
+
+## 2026-11-18 — r24: input limit from the Type-C current advertisement (kexec-tested from r22, not flashed)
+
+Owner: "étape 1 puis la 2". On top of r23. The charger also reads CC_STATUS0 of the USB-C block
+(0x25 reg 0x0A; read only, unclaimed, like BC_STATUS; vendor ccic/max77705_cc.c): bits 2:0
+CCStat must be 1 (sink), bits 5:4 CCIStat give the source's advertisement (2 = 1.5 A, 3 = 3.0 A).
+Only with VBUS present (BC_STATUS bit 7). Input limit = max(BC1.2 rule, Type-C rule):
+Rp 3.0 A -> `maxim,typec-3000ma-input-current-limit-microamp` 3000 mA, Rp 1.5 A ->
+`maxim,typec-1500ma-input-current-limit-microamp` 1400 mA (so a detected DCP's 1800 is never
+lowered); default Rp, not a sink, no VBUS or a read error: the BC1.2 value. Driver ceilings
+1.4 A / 3.0 A (a larger DT value is dropped). Stock: `battery,rp_current_rp2` 0x578 = 1400 mA,
+`rp_current_rp3` 0xbb8 = 3000 mA (sec_battery.c sec_bat_set_rp_current: input rp2/rp3, charge
+rp2 = 1400 / battery max 3150). Charge current unchanged: 1500 mA only on BC1.2 DCP, 450 mA
+otherwise, also with Rp 1.5/3 A (stock would allow 1400/3150 there; kept conservative). Bounded
+AICL and the "at or under the reference" check unchanged; the register reference follows the
+cable and the advertisement (written on a change).
+New read-only ADC channel: PM8150L AMUX THM3 (0x4f) "chg_therm", the stock battery's
+`adc-chg-temp`, for monitoring (`in_temp_chg_therm_input`); not used by the safety logic yet.
+
+linux 7173fdcd7 (driver + binding), 8cc2c9ff3 (DTS) = aport patches 0044-0045, pkgrel 24,
+release **7.3.4-r24**. Tests: Type-C read only, sink only, max() with the BC1.2 value, ceilings,
+charge current independent of Type-C; DTS values <= stock rp2/rp3 and <= the 3200 mA register max.
+
+| File | sha256 |
+|---|---|
+| `build/archive/boot-shim-r24-e6d92efb.img` (BOOT) | `e6d92efbaff094194ade69be0e8359a9415c650bdbcb1e73e99896da82d1651f` |
+| `build/archive/recovery-shim-r24-aecaadb3.img` (RECOVERY, not to flash) | `aecaadb38e91844310ffd8a24b7c308caf1318795629b8e42a6dcac1f7961818` |
+| `build/charge-r24/linux-samsung-gts7xl-7.3.4-r24.apk` | `285fe728ecf62303b88768f10460d0b32282ffe660b681306e2627b11045fc99` |
+
+Cmdline md5 identical to r22. Omarchy: `linux-gts7xl 7.3.4.r24-1` (hook dry run, BOOT not
+written); the upgrade removed 7.3.4-r23 (owned by the r23 package): put back from a copy, so
+7.3.4, -r20, -r21, -r22, -r23 (outside pacman) and -r24 exist.
+
+Kexec test from r22 over Wi-Fi (.166, MAC pinned), wall charger, backlight 0
+(build/charge-dcp-test-084153):
+- `safety monitor: CC 450000 uA (DCP 1500000 uA), CHGIN 475000 uA (DCP 1800000 uA, Type-C 1.5/3 A
+  1400000/3000000 uA), ...`, `input limit 3000000 uA (USB type 2, Type-C 3000 mA)`,
+  `charge current 1500000 uA (USB type 2)`.
+- CNFG_09 (0xC0) = 0xf7: CHGIN_LIM 0x77 = 3000 mA, CHG_EN; CNFG_02 0x5e (1500 mA); CC_STATUS0
+  0x71 (sink, Rp 3.0 A); CHG_INT_OK 0xdf (AICL not active); DTLS_01 0x31 (CC); health Good.
+- 10 min, 40 samples: battery +1.48 A mean (1.44..1.51 A), FG average +1.48 A; capacity 18 -> 21 %;
+  battery 30.9 -> 31.7 C; charger thermistor 37.6..38.0 C (steady).
+- inhibit-charge: CNFG_00 0x14, CNFG_09 0x77 (CHG_EN 0), DTLS_01 0x38, battery -8..+16 mA,
+  "Not charging"; auto: +1.48 A within 10 s.
+- Reboot to BOOT: 7.3.4-r22, 450 mA / 1800 mA, charging +0.48 A, Wi-Fi .166, hci0, no failed units.

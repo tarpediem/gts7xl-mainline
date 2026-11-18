@@ -121,3 +121,41 @@ def test_dts_dcp_charge_current_within_stock():
     assert m and int(m.group(1)) <= 1500000 <= 2100 * 1000
     # every other cable keeps the battery's 450 mA
     assert re.search(r"constant-charge-current-max-microamp = <450000>;", text)
+
+
+@needs_linux
+def test_typec_input_limit_sink_only_and_never_lowers():
+    src = CHG.read_text()
+    tc = re.search(r"static unsigned int max77705_typec_input_limit\(.*?\n}\n", src, re.S).group(0)
+    # read-only CC_STATUS0 read, only as the sink; 1.5 A / 3 A only, anything else 0
+    assert "I2C_SMBUS_READ" in tc and "I2C_SMBUS_WRITE" not in tc
+    assert "== MAX77705_CC_CCSTAT_SINK" in tc
+    assert "unsigned int ua = 0" in tc
+    assert tc.count("ua = chg->chgin_typec") == 2
+    cable = re.search(r"static unsigned int max77705_cable_input_limit\(.*?\n}\n", src, re.S).group(0)
+    # used only with VBUS present, combined with max(): never lowers the BC1.2 value
+    assert "ua = max(ua, max77705_typec_input_limit(chg));" in cable
+    assert cable.index("MAX77705_BC_VBUSDET") < cable.index("max77705_typec_input_limit")
+    # driver ceilings = stock rp_current_rp2 / rp3
+    assert "#define MAX77705_TYPEC15_CEIL_UA	1400000" in src
+    assert "#define MAX77705_TYPEC30_CEIL_UA	3000000" in src
+    assert "chg->chgin_typec15_ua = 0;" in src and "chg->chgin_typec30_ua = 0;" in src
+    # the charge current does not look at Type-C
+    cc = re.search(r"static unsigned int max77705_cable_charge_current\(.*?\n}\n", src, re.S).group(0)
+    assert "typec" not in cc
+
+
+def test_dts_typec_limits_within_stock():
+    dts = (LINUX / "arch" / "arm64" / "boot" / "dts" / "qcom" / "sm8250-samsung-gts7xl.dts")
+    if not dts.exists():
+        pytest.skip("needs the linux/ checkout")
+    text = dts.read_text()
+    stock = (ROOT / "reference" / "stock-overlay-01-id0-rev0.dts").read_text()
+    rp2 = int(re.search(r"battery,rp_current_rp2 = <(0x\w+)>;", stock).group(1), 16)
+    rp3 = int(re.search(r"battery,rp_current_rp3 = <(0x\w+)>;", stock).group(1), 16)
+    assert (rp2, rp3) == (1400, 3000)
+    t15 = int(re.search(r"maxim,typec-1500ma-input-current-limit-microamp = <(\d+)>;", text).group(1))
+    t30 = int(re.search(r"maxim,typec-3000ma-input-current-limit-microamp = <(\d+)>;", text).group(1))
+    assert t15 <= rp2 * 1000 and t30 <= rp3 * 1000
+    # 3200 mA is the CHGIN register maximum
+    assert t30 <= 3200000

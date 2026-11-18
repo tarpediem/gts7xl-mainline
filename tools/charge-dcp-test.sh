@@ -9,7 +9,7 @@
 #      BOOT_REL (kernel expected after the final reboot, default 7.3.4-r22),
 #      RESUME=1 (already kexec'd into the test kernel: start at the checks).
 # The Wi-Fi MAC (so the DHCP address) may change at each boot: without HOST the tablet is found by mDNS.
-# Stops early (inhibit, reboot) if the battery reaches 40 C. Runs as the user; root on the
+# Stops early (inhibit, reboot) if the battery reaches 40 C or the charger thermistor 60 C. Runs as the user; root on the
 # tablet through its passwordless sudo.
 set -uo pipefail
 SP=${SP:-/tmp/claude-1000/-home-tarpediem-Work-samsung-gts7xl-mainline/8218a82d-737f-4327-a27f-5970ee3d04e8/scratchpad}
@@ -30,7 +30,7 @@ log() { echo "[$(date +%T)] $*" | tee -a "$OUT/run.log"; }
 wait_up() { local i; for ((i=0;i<$1;i+=5)); do H=$(find_host); [ -n "$H" ] && s true 2>/dev/null && return 0; sleep 5; done; return 1; }
 wait_down() { local i; for ((i=0;i<$1;i+=2)); do s true 2>/dev/null || return 0; sleep 2; done; return 1; }
 C=/sys/class/power_supply/max77705-charger; B=/sys/class/power_supply/max170xx_battery
-SAMPLE="echo \$(date +%T) type=\$(grep -o '\[[A-Z_]*\]' $C/usb_type) st=\$(cat $C/status) cc=\$(cat $C/constant_charge_current) ilim=\$(cat $C/input_current_limit) CNFG02=\$(i2cget -f -y 0 0x69 0xb9) CNFG00=\$(i2cget -f -y 0 0x69 0xb7) DTLS01=\$(i2cget -f -y 0 0x69 0xb4) Ibat=\$(cat $B/current_now) Iavg=\$(cat $B/current_avg) V=\$(cat $B/voltage_now) cap=\$(cat $B/capacity) T=\$(cat $C/temp) health=\$(cat $C/health)"
+SAMPLE="echo \$(date +%T) type=\$(grep -o '\[[A-Z_]*\]' $C/usb_type) st=\$(cat $C/status) cc=\$(cat $C/constant_charge_current) ilim=\$(cat $C/input_current_limit) CNFG02=\$(i2cget -f -y 0 0x69 0xb9) CNFG09=\$(i2cget -f -y 0 0x69 0xc0) CCST0=\$(i2cget -f -y 0 0x25 0x0a) INTOK=\$(i2cget -f -y 0 0x69 0xb2) CNFG00=\$(i2cget -f -y 0 0x69 0xb7) DTLS01=\$(i2cget -f -y 0 0x69 0xb4) Ibat=\$(cat $B/current_now) Iavg=\$(cat $B/current_avg) V=\$(cat $B/voltage_now) cap=\$(cat $B/capacity) T=\$(cat $C/temp) health=\$(cat $C/health) chgT=\$(cat /sys/bus/iio/devices/*/in_temp_chg_therm_input 2>/dev/null | head -1)"
 
 K=$OUT/k; mkdir -p "$K"; tar xzf "$APK" -C "$K" boot 2>/dev/null
 [ -f "$K/boot/vmlinuz" ] || { echo "no kernel in $APK" >&2; exit 1; }
@@ -69,6 +69,8 @@ while [ $SECONDS -lt $end ]; do
 	line=$(r "$SAMPLE"); echo "$line" | tee -a "$OUT/soak.log"
 	t=$(echo "$line" | sed -n 's/.* T=\([0-9-]*\).*/\1/p')
 	[ -n "$t" ] && [ "$t" -ge 400 ] && { hot=1; log "battery at $t (0.1 C): stopping"; break; }
+	ct=$(echo "$line" | sed -n 's/.* chgT=\([0-9-]*\).*/\1/p')
+	[ -n "$ct" ] && [ "$ct" -ge 60000 ] && { hot=1; log "charger thermistor at $ct (m C): stopping"; break; }
 	sleep 15
 done
 r "for b in /sys/class/backlight/*; do echo $bl > \$b/brightness; done"
