@@ -165,3 +165,24 @@ keyboard): source attach -> host role -> boost with every interlock.
    driver's polling removed.
 4. QMP combo PHY + USB 3, then DP Alt Mode (adapter needed: owner's HDMI adapter).
 5. PD 9 V (section 4), off by default, tested with the owner's PD charger.
+
+## 7. E1-E3 test plan (approved by the owner, to run after his Waydroid test)
+
+Script: `tools/usbc-mailbox-test.sh build/otg-r25/linux-samsung-gts7xl-7.3.4-r25.apk`, owner steps
+answered one line each on stdin (the agent feeds them from the coordinator's relay). Takes the
+tablet lock, battery >= 20 %, starts from BOOT (r24).
+
+1. Owner: nothing plugged. E1 on r24 (configuration before any write).
+2. kexec r25 (dual role; VBUS output policy checked `off`, never enabled in this test).
+3. E1 again, E2 (0x54 = 0x00), VBUS watch 5 s; E3a (0x55 = 0x01), VBUS watch 10 s, E1 again.
+4. Owner: plug the OTG adapter with the keyboard. Expected: CCStat 2 (SOURCE), role host,
+   **VBUS still off** (BC_STATUS bit 7 = 0, CHGIN_OK = 0, CHGIN_DTLS = 0, CNFG_00 boost bit 0);
+   the keyboard stays unpowered. Owner: unplug it.
+5. E3b (0x55 = 0x03), adapter plugged/unplugged again with the same checks.
+6. Owner: wall charger. Expected: CCStat 1 (SINK), role device, DCP, input limit and charging
+   as with r24.
+7. Reboot to r24, E1 again: does the firmware keep E2/E3 across a reboot (PMIC not reset)?
+
+VBUS watch: every second, any sign of VBUS or boost while nothing should supply it ->
+ABORT: E2 (auto VBUS off) is re-sent, the owner is told to unplug the adapter at once, the
+script stops with the lock held (exit 4) and the tablet stays on r25 for a look.
