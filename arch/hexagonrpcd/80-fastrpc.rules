@@ -1,2 +1,5 @@
 # FastRPC device nodes (DSP remote procedure calls) for hexagonrpcd
 SUBSYSTEM=="misc", KERNEL=="fastrpc-*", GROUP="fastrpc", MODE="0660"
+# The SLPI (and so /dev/fastrpc-sdsp) comes up after multi-user.target was reached: start
+# hexagonrpcd when the node appears (its ConditionPathExists skipped it at boot).
+SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp", TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-sdsp.service"

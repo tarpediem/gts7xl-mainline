@@ -1,7 +1,8 @@
 # gts7xl sensors through the SLPI (hexagonrpcd + libssc + iio-sensor-proxy).
 # iio-sensor-proxy 3.9 only tags fastrpc-* with ssc-light and ssc-compass; the
 # accelerometer (LSM6DSO, for screen rotation) must be enabled per device.
-# The SLPI already turns the LSM6DSO axes into the Android device frame (stock registry
-# lsm6dso_0_platform.orient: x = -y, y = +x, z = +z): identity matrix, to be corrected
-# here after the first test on the tablet if rotation goes the wrong way.
-SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp", ENV{IIO_SENSOR_PROXY_TYPE}+="ssc-accel", ENV{ACCEL_MOUNT_MATRIX}="1, 0, 0; 0, 1, 0; 0, 0, 1"
+# Mount matrix measured on the tablet (2026-11-18): held upright in the panel's landscape
+# orientation (as GNOME/Hyprland show it with no rotation), the SSC reports about
+# x = +9.8, y = 0 m/s2; iio-sensor-proxy calls "normal" a reading of y = -g. So
+# x' = y, y' = -x (a 90 degree rotation, z unchanged).
+SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp", ENV{IIO_SENSOR_PROXY_TYPE}+="ssc-accel", ENV{ACCEL_MOUNT_MATRIX}="0, 1, 0; -1, 0, 0; 0, 0, 1"
