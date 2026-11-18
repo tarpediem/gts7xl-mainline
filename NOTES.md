@@ -1869,3 +1869,91 @@ stable mirrors, removes stray databases (the build-only [offline] repo) and fail
 package is newer than the snapshot (Firefox included) unless it is listed in `ALLOW_NEWER_PKGS`
 (empty by default). The live ALARM mirror stays a download fallback for files the stable mirror
 404s, same version only. Tests: tests/test_omarchy_pacman_sync.py. Not yet run in a full image build.
+
+## 2026-11-18 — r25: USB dual role + VBUS output (OTG) — role tested by kexec, boost NOT enabled yet
+
+Owner: USB OTG (host mode for a hub / devices). Design: docs/usb-dual-role-design.md. On top of r24.
+
+**1. dwc3 dual role.** DTS `&usb_1_dwc3`: `dr_mode = "otg"`, `usb-role-switch`,
+`role-switch-default-mode = "peripheral"` -> `/sys/class/usb_role/a600000.usb-role-switch/role`
+(host / device / none). Device by default: gadget networking unchanged.
+
+**2. Automatic role (read only).** The charger driver (it already reads the USB-C block 0x25,
+unclaimed) polls CC_STATUS0 every 1 s; bits 2:0 CCStat (vendor max77705_cc.c: 0 none, 1 SINK =
+the tablet is the sink of a PC/charger, 2 SOURCE = a sink is attached: OTG adapter/hub/keyboard,
+3 audio, 4 debug, 5 error, 6 disabled). Debounced (2 equal reads): SOURCE -> host, anything else
+-> device; read errors change nothing. The role is only written on a change of the debounced
+state, so a manual `echo host > .../role` stays until the next attach change;
+`usb_role_auto` (0/1, charger device sysfs) stops the automatic role. DT link:
+`usb-role-switch = <&usb_1_dwc3>` on the charger node (looked up by the poll, so the charger
+never waits for dwc3).
+
+**3. VBUS output (OTG boost), written, OFF by default.** Charger device sysfs `otg_vbus`
+(`off` default / `auto`; shows `(on)` / `(fault)`). With `auto` and a debounced SOURCE attach:
+- gates, all before any register write: driver running, no latched fault, BC_STATUS no VBUS,
+  CHG_INT_OK CHGIN_OK clear, CHGIN_DTLS == 0 (below UVLO: nothing on CHGIN), battery
+  thermistor read OK and inside the charging window (2..41 C), fuel gauge read OK and capacity
+  >= `maxim,otg-min-capacity-percent` (15 %);
+- sequence (vendor max77705_set_otg): CHGPROT unlock, CHG_EN 0, CNFG_02 OTG_ILIM = 900 mA
+  (stock MAX77705_OTG_ILIM_900), CNFG_00 MODE = 0x0a (OTG + boost; vendor
+  MAX77705_MODE_A_BOOST_OTG_ON), read back MODE 0x0a + CHG_EN 0 + ILIM 900 + no BYP
+  over-current, else off + fault;
+- every poll (1 s) while on, before the debounce: CCStat still SOURCE, MODE/CHG_EN/ILIM as
+  set, DTLS_02 BYP_DTLS bit 0 (vendor: "bypass overcurrent limit") clear, thermistor and
+  capacity OK; BYP interrupt triggers an immediate poll; watchdog kicked only after this check;
+- off = force_off (MODE 0x04, CHG_EN 0), MODE read back without the boost bit, retried 3x
+  (dev_crit if it stays); the safety monitor re-evaluates charging right after;
+- while on, the safety monitor and the AICL handler leave the charger alone (requeue only);
+- off on: detach/any other CCStat, unreadable CC status, `otg_vbus = off`, fault, battery out
+  of range, driver unbind (devm action, runs first), shutdown (`.shutdown`). Faults latch until
+  the next detach (debounced non-SOURCE state).
+
+### Failure modes (VBUS output), and what covers them
+
+| # | Failure | Effect | Cover |
+|---|---|---|---|
+| F1 | Boost on while a charger/PC also drives VBUS (back-feed, two sources) | current into the boost, IC/port damage | gates BC VBUSDET, CHGIN_OK, CHGIN_DTLS == 0 before; a charger attach changes CCStat (SOURCE -> SINK/none) -> off within 1 s, no debounce |
+| F2 | Charge and boost at once | undefined mode, battery current both ways | CHG_EN 0 before MODE 0x0a; read back CHG_EN 0 every poll; safety monitor does not run its on/off while boost_on |
+| F3 | Over-current / short on VBUS | heat, battery drain | hardware OTG_ILIM 900 mA; BYP over-current bit -> off + latch; BYP IRQ -> immediate poll |
+| F4 | Register write lost / I2C error | wrong mode | every write read back; any read error -> off; off retried 3x, dev_crit if the boost bit stays |
+| F5 | Battery too hot/cold or empty while boosting | battery stress, brown-out | thermistor + capacity read every poll; out of range -> off + latch |
+| F6 | Kernel hangs while boosting | boost stays on | not covered by the watchdog for sure: the charger watchdog is documented for charging; whether it stops the boost is unknown (to test or leave as residual risk); watchdog only kicked from a verified state |
+| F7 | Detach not seen (USB-C firmware stuck, CC_STATUS0 stale) | VBUS on an empty port | VBUS on an open port is harmless (5 V, 900 mA limit); any unreadable read -> off; residual: firmware freeze with a stale SOURCE |
+| F8 | Dock / hub with power passthrough (source to the tablet and sink downstream) | tablet stays device, no host | CCStat SINK -> device; needs PD DR_swap (not done, future PD driver) |
+| F9 | Debounce lets a short glitch through | role flaps | 2 equal reads (1 s apart); boost goes off on the first non-SOURCE read (safe direction) |
+| F10 | Manual role host while a PC is attached | gadget link lost | manual action; the next attach change sets device again |
+| F11 | Driver unbind / shutdown / reboot with boost on | VBUS left on | devm action (first on unbind) and `.shutdown` switch it off; kexec goes through shutdown |
+| F12 | Fault latch never released | no VBUS until replug | released on the next debounced non-SOURCE state (unplug) |
+| F13 | Inrush at power-on trips BYP over-current | VBUS off, latch | stock-like; replug clears it; logged "over-current" |
+| F14 | AICL handler lowers CHGIN_LIM during boost | slow charge after | AICL skipped while boost_on |
+| F15 | Wrong CCStat meaning on this firmware | host/boost with a charger | checked on hardware: wall charger reads CCStat 1 (SINK); SOURCE seen only with the owner's OTG adapter (to verify before enabling boost) |
+
+linux 96ffbb332 (driver + binding), 65e1d2707 (DTS) = aport patches 0046-0047, pkgrel 25,
+release **7.3.4-r25**. Tests: tests/test_kernel_charger.py (one MODE 0x0a write, every gate
+before it, CHG_EN 0 first, 900 mA only, read back; default off; no-input check; monitor and
+off paths incl. unbind/shutdown; safety monitor and AICL idle while boosting; debounced role,
+boost off before the device role; DTS device default).
+
+| File | sha256 |
+|---|---|
+| `build/archive/boot-shim-r25-4989be10.img` (BOOT) | `4989be1020e4fe9304a39d41917db9315efaa1de55a30d668cf9538fab2e66ba` |
+| `build/archive/recovery-shim-r25-823e090b.img` (RECOVERY, not to flash) | `823e090b31ceb4c6bbef6b6380d3e9fa5487740a7aeca82b9940686ab4727375` |
+| `build/otg-r25/linux-samsung-gts7xl-7.3.4-r25.apk` | `290c655b2a3f9e612a59caff98dd8f44023eef78883bf7ccb0558d07a367a499` |
+
+Cmdline md5 identical to r22. Omarchy `linux-gts7xl 7.3.4.r25-1` (hook dry run, BOOT not
+written); module dirs 7.3.4, -r20 .. -r25 all present (r24 put back after the upgrade).
+
+Kexec test from r24 (tools/otg-role-test.sh, build/otg-role-test-225057), nothing plugged into
+the USB-C port (CC_STATUS0 0x00, on battery), boost never enabled:
+- `USB-C: data role from CC status, VBUS output off until enabled (900 mA, capacity >= 15 %)`,
+  `USB role device (CC status 0)`; role `device`, `usb_role_auto` 1, `otg_vbus` `off`.
+- `echo host`: xhci-hcd registers usb1 (HS) + usb2 (SS root hub), UDC gone; 6 s later still
+  host (the automatic role does not undo a manual one); CNFG_00 0x15, CNFG_02 0x49 unchanged
+  (no boost, OTG_ILIM bits 0).
+- `echo device`: xhci removed, UDC a600000.usb back, configfs gadget g1 bound again (`not
+  attached`: no PC cable during the test, so the gadget data link itself was not exercised).
+- Back on r24 (BOOT), Wi-Fi up, no failed units.
+- Wall charger attach (CCStat 1, SINK) was read in the r23/r24 tests (CC_STATUS0 0x71): device.
+
+Not done yet (owner needed): host with a real device through an OTG adapter, a CCStat SOURCE
+reading on this firmware (F15), the boost itself, the PC gadget link after a role round trip.

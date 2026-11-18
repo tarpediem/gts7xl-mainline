@@ -4,7 +4,7 @@
 # the boot image carries Samsung-derived bits (stock boot header, dtb, vbmeta blob).
 #   GTS7XL_APK=... GTS7XL_BOOT=build/archive/boot-shim-rNN-xxxx.img CARCH=aarch64 makepkg
 pkgname=linux-gts7xl
-pkgver=7.3.4.r24
+pkgver=7.3.4.r25
 pkgrel=1
 pkgdesc="Linux for the Samsung Galaxy Tab S7+ 5G (modules + BOOT image, written by a hook)"
 arch=(aarch64)
